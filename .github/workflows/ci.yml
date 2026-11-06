@@ -1,0 +1,25 @@
+name: inspector
+on: [push, pull_request]
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -m unittest discover -s tests -v
+      - run: docker compose up --build --detach
+      - name: Wait for collector
+        run: |
+          for attempt in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:19877/health; then exit 0; fi
+            sleep 1
+          done
+          docker compose logs
+          exit 1
+      - run: python3 tests/integration.py
+      - run: python3 tests/on_demand.py
+      - if: always()
+        run: docker compose logs && docker compose down

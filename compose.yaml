@@ -1,0 +1,15 @@
+services:
+  inspector:
+    build:
+      context: .
+      dockerfile: dev/Dockerfile
+    network_mode: host
+    volumes:
+      - inspector-data:/data
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+volumes:
+  inspector-data:
