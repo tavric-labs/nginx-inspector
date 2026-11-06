@@ -6,6 +6,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs');const {chromium
  let workers={available:false,capture_active:true,processes:[],live_workers:[]};
  await page.route('http://inspector.test/**',async route=>{
   const url=new URL(route.request().url()),path=url.pathname;
+  if(path==='/api/events')await new Promise(resolve=>setTimeout(resolve,250));
   const data={'/api/events':events,'/api/summary':{retained:3,window:3,errors:0},'/api/capture':{active:true,sample_permyriad:10000,remaining_seconds:60},'/api/workers':workers};
   const html=path==='/'?'collector/viewer.html':path==='/replay/detail'?'collector/journey.html':null;
   let body;if(html)body=fs.readFileSync(html,'utf8');else if(path.startsWith('/api/transport/'))body=JSON.stringify({status:'not_captured',records:[]});else if(path.startsWith('/api/events/')){const e=events.find(e=>e.id===path.split('/').pop());if(!e){await route.fulfill({status:404,body:'{}'});return;}body=JSON.stringify(e);}else body=JSON.stringify(data[path]??{});

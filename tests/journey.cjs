@@ -15,6 +15,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs');const {chromium
  assert((await page.locator('#component-syn').getAttribute('class')).includes('observed'));
  assert.equal(await page.locator('img').count(),0,'request values are text, not markup');
  await page.locator('#next').click();assert.equal(await page.locator('#position').innerText().then(t=>t.includes('Accept-queue hook')),true);
+ await page.locator('#next').click();await page.locator('#next').click();assert((await page.locator('#event-detail').innerText()).includes('EPOLLIN'));await page.locator('#play').click();await page.waitForTimeout(900);assert((await page.locator('#event-detail').innerText()).includes('epoll returned'));await page.locator('#play').click();
  await page.locator('#component-loop').click();assert((await page.locator('#intent').innerText()).includes('not automatically scheduler queue delay'));
  if(process.env.SCREENSHOT_DIR){fs.mkdirSync(process.env.SCREENSHOT_DIR,{recursive:true});await page.screenshot({path:process.env.SCREENSHOT_DIR+'/request-journey.png',fullPage:true});}
  view={request_id:id,status:'ambiguous',records:[]};await page.locator('#refresh').click();await page.getByText(/Conflicting transport correlations/).waitFor();assert.equal(await page.locator('#puck').getAttribute('visibility'),'hidden');

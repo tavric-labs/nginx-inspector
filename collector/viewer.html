@@ -476,7 +476,7 @@
     state.workers=w;state.workersAt=Date.now();const now=Date.now();
     for(const worker of w.live_workers||[])for(const r of worker.requests||[]){let a=SIGHT.get(r.id);if(!a){a={seen:now,log:[]};SIGHT.set(r.id,a);}a.last=now;const l=a.log[a.log.length-1];if(!l||l.phase!==r.phase||l.io!==r.io||l.status!==r.status){a.log.push({at:now,elapsed:r.elapsed_ms,phase:r.phase,io:r.io,status:r.status,bytes:r.response_bytes});if(a.log.length>30)a.log.shift();}}
     for(const [id,a] of SIGHT)if(now-a.last>120000)SIGHT.delete(id);
-    if(!$('replay-panel').hidden){renderReplayList();if(R.kind==='inflight')paintReplay();}
+    if(!$('replay-panel').hidden){renderReplayList();if(!R.kind&&state.events.length)openReplay('completed',state.events[0].id);else if(R.kind==='inflight')paintReplay();}
   }
   function renderReplayList(){
     const list=$('rp-list'),q=$('rp-search').value.trim().toLowerCase();
