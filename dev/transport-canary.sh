@@ -14,10 +14,10 @@ cp -a /usr/share/nginx/src "$task_dir/src"
 task_repo=$(pwd)
 (
  cd "$task_dir/src"
- ./configure --with-compat --with-debug --with-http_ssl_module --with-http_v2_module --with-http_stub_status_module --with-http_auth_request_module --with-threads --add-dynamic-module="$task_repo/module"
+ NGINX_INSPECTOR_MODULE_NAME=ngx_http_inspector_transport_v3_module ./configure --with-compat --with-debug --with-http_ssl_module --with-http_v2_module --with-http_stub_status_module --with-http_auth_request_module --with-threads --add-dynamic-module="$task_repo/module"
  make -f objs/Makefile modules -j2
 )
-cp "$task_dir/src/objs/ngx_http_inspector_v2_module.so" "$task_dir/inspector.so"
+cp "$task_dir/src/objs/ngx_http_inspector_transport_v3_module.so" "$task_dir/inspector.so"
 mkdir -p build/transport
 cp "$task_dir/inspector.so" build/transport/ngx_http_inspector_module.so
 dpkg-query -W -f='${Version}\n' nginx > build/transport/nginx-package-version.txt
@@ -38,10 +38,10 @@ EOF
 collector_pid=$!
 for i in $(seq 1 50); do if curl -fsS http://127.0.0.1:19577/health >/dev/null; then break; fi; sleep .1; done
 /usr/sbin/nginx -p "$task_dir/" -c "$task_dir/nginx.conf"
-curl -fsS http://127.0.0.1:19577/api/capture/start -H 'Content-Type: application/json' -d '{"seconds":30,"sample_permyriad":10000}'
+curl -fsS http://127.0.0.1:19577/api/capture/start -H 'Content-Type: application/json' -d '{"seconds":120,"sample_permyriad":10000}'
 sudo "$task_dir/nginx-inspector" trace --for 12s --master-pid "$(cat "$task_dir/nginx.pid")" --module "$task_dir/inspector.so" --udp-port 19576 > "$task_dir/trace.ndjson" 2> "$task_dir/trace.log" &
 trace_pid=$!
-for i in $(seq 1 150); do if rg -q TRACE_READY "$task_dir/trace.log"; then break; fi; if ! kill -0 "$trace_pid" 2>/dev/null; then cat "$task_dir/trace.log"; exit 1; fi; sleep .1; done
+for i in $(seq 1 600); do if rg -q TRACE_READY "$task_dir/trace.log"; then break; fi; if ! kill -0 "$trace_pid" 2>/dev/null; then cat "$task_dir/trace.log"; exit 1; fi; sleep .1; done
 rg -q TRACE_READY "$task_dir/trace.log"
 python3 - <<'PY'
 import http.client,time

@@ -125,10 +125,10 @@ func RunTrace(ctx context.Context, o TraceOptions, out, diagnostics io.Writer) e
 	}
 	session := hex.EncodeToString(sessionBytes)
 	script := traceProgram(o, pids, inodes, session)
-	ctx, cancel := context.WithTimeout(ctx, o.Duration+15*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, o.Duration+60*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "bpftrace", "-q", "-e", script)
-	cmd.Env = append(os.Environ(), "BPFTRACE_MAP_KEYS_MAX=4096")
+	cmd.Env = append(os.Environ(), "BPFTRACE_MAX_MAP_KEYS=4096")
 	cmd.Stderr = diagnostics
 	cmd.Cancel = func() error { return cmd.Process.Signal(os.Interrupt) }
 	cmd.WaitDelay = 3 * time.Second
@@ -252,9 +252,9 @@ func traceProgram(o TraceOptions, pids []int, inodes []uint64, session string) s
 
 	// Listener socket inode is verified against the selected master's ss ownership.
 	fmt.Fprintf(&b, `kprobe:inet_csk_reqsk_queue_hash_add { $sk=(struct sock*)arg0; $so=$sk->sk_socket; if($so!=0){$f=$so->file;if($f!=0){$ino=$f->f_inode->i_ino;if(%s){@syn[(uint64)arg1]=nsecs;}}}}
-kprobe:inet_csk_reqsk_queue_add { $sk=(struct sock*)arg0;$so=$sk->sk_socket;if($so!=0){$f=$so->file;if($f!=0){$ino=$f->f_inode->i_ino;if(%s){@queued[(uint64)arg2]=nsecs;@synchild[(uint64)arg2]=0;if(@handoff_req[tid,cpu]==(uint64)arg1){@synchild[(uint64)arg2]=@handoff_syn[tid,cpu];}delete(@syn[(uint64)arg1]);}}}}
 kprobe:inet_csk_complete_hashdance { @handoff_req[tid,cpu]=(uint64)arg2;@handoff_syn[tid,cpu]=@syn[(uint64)arg2]; }
 kretprobe:inet_csk_complete_hashdance {delete(@handoff_req[tid,cpu]);delete(@handoff_syn[tid,cpu]);}
+kprobe:inet_csk_reqsk_queue_add { $sk=(struct sock*)arg0;$so=$sk->sk_socket;if($so!=0){$f=$so->file;if($f!=0){$ino=$f->f_inode->i_ino;if(%s){@queued[(uint64)arg2]=nsecs;@synchild[(uint64)arg2]=(uint64)0;if(@handoff_req[tid,cpu]==(uint64)arg1){@synchild[(uint64)arg2]=@handoff_syn[tid,cpu];}delete(@syn[(uint64)arg1]);}}}}
 kprobe:inet_csk_reqsk_queue_drop {delete(@syn[(uint64)arg1]);}
 kprobe:sk_free,kprobe:__sk_free {delete(@queued[(uint64)arg0]);delete(@synchild[(uint64)arg0]);}
 kprobe:inet_csk_accept /%s/ { @accepting[tid]=1; }
