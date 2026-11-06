@@ -48,6 +48,18 @@ It lists up to eight sampled request IDs, methods, queryless paths, elapsed time
 last observed hook, status, response-buffer bytes and I/O flags. It also reports
 how many live request rows were omitted.
 
+Each row answers two different questions, shown in two columns:
+
+- **Where it is** is the last hook the module saw the request pass, drawn as a
+  seven-stage ladder (Parsed, Rewrite, Access, Content, Headers, Body, Done). It is a
+  position in the request's life, not a live stack trace. A long stream can sit at
+  the Body stage for an hour.
+- **What nginx's sockets are doing now** decodes the I/O flags: which readiness and
+  timer flags nginx had set on the client connection and on the upstream connection at
+  that instant, with a one-line reading such as "Waiting for the upstream to send". It
+  is a reading of flags at one moment, not a diagnosis. An armed timer has not expired.
+  The raw bit value is shown beneath it.
+
 This is not every transition. A short request can finish between snapshots; use its
 completed event for retained history. A snapshot expires after four seconds and
 live request rows disappear immediately from the API when capture stops. The
