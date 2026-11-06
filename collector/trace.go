@@ -110,6 +110,35 @@ func RunTrace(ctx context.Context, o TraceOptions, out, diagnostics io.Writer) e
 	if e != nil {
 		return e
 	}
+	selected := []int{}
+	selectedStarts := map[int]string{o.MasterPID: starts[o.MasterPID]}
+	for _, pid := range pids {
+		f, err := os.Open(fmt.Sprintf("/proc/%d/maps", pid))
+		if err != nil {
+			continue
+		}
+		data, err := io.ReadAll(io.LimitReader(f, 4<<20))
+		f.Close()
+		if err != nil {
+			continue
+		}
+		mapped := false
+		for _, line := range strings.Split(string(data), "\n") {
+			fields := strings.Fields(line)
+			if len(fields) >= 6 && fields[len(fields)-1] == o.Module {
+				mapped = true
+				break
+			}
+		}
+		if mapped {
+			selected = append(selected, pid)
+			selectedStarts[pid] = starts[pid]
+		}
+	}
+	if len(selected) == 0 {
+		return fmt.Errorf("no selected worker maps the specified marker-enabled module")
+	}
+	pids, starts = selected, selectedStarts
 	inodes, e := traceListeners(o.MasterPID, pids)
 	if e != nil {
 		return e
