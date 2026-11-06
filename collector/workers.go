@@ -217,6 +217,12 @@ func (w *workerMonitor) matchesMaster(claim int) bool {
 	}
 	w.mu.Lock()
 	cached := w.view.MasterPID
+	for _, p := range w.view.Processes {
+		if (p.PID == claim || p.Parent == claim) && (p.Role == "master" || p.Role == "worker" || p.Role == "draining worker") {
+			w.mu.Unlock()
+			return true
+		}
+	}
 	w.mu.Unlock()
 	if claim > 0 && claim == cached {
 		return true
@@ -231,14 +237,14 @@ func (w *workerMonitor) matchesMaster(claim int) bool {
 		return false
 	}
 	pid, e := strconv.Atoi(strings.TrimSpace(string(b)))
-	if e != nil || pid <= 0 || pid != claim {
+	if e != nil || pid <= 0 {
 		return false
 	}
 	w.mu.Lock()
 	w.view.MasterPID = pid
 	w.view.Scoped = true
 	w.mu.Unlock()
-	return true
+	return claim == pid
 }
 func (w *workerMonitor) accepts(e Event) bool {
 	if w.pidfile == "" {

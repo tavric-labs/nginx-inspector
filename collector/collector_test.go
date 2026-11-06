@@ -175,7 +175,7 @@ func TestReadOnlyListenerAndControlBoundary(t *testing.T) {
 		r := httptest.NewRequest("POST", "http://127.0.0.1:19877/api/capture/start", strings.NewReader(tc.body))
 		r.Host = tc.host
 		r.Header.Set("Origin", tc.origin)
-		r.Header.Set("Content-Type", "application/json")
+		r.Header.Set("Content-Type", "application/json; charset=utf-8")
 		w := httptest.NewRecorder()
 		s.handler(tc.readonly, 19877).ServeHTTP(w, r)
 		if w.Code != tc.code {

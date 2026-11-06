@@ -114,7 +114,8 @@ func (s *Server) handler(readonly bool, port int) http.Handler {
 				fail("same origin required", 403)
 				return
 			}
-			if r.Header.Get("Content-Type") != "application/json" {
+			ct := strings.ToLower(strings.TrimSpace(strings.SplitN(r.Header.Get("Content-Type"), ";", 2)[0]))
+			if ct != "application/json" {
 				fail("application/json required", 415)
 				return
 			}
@@ -294,6 +295,9 @@ func (s *Server) persist() {
 			s.mu.Unlock()
 			s.inc("storage_dropped", uint64(len(batch)))
 		} else {
+			s.mu.Lock()
+			s.failure = false
+			s.mu.Unlock()
 			s.inc("persisted", uint64(len(batch)))
 		}
 	}

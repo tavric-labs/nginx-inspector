@@ -124,8 +124,10 @@ func run(args []string) error {
 			path = "/health"
 		}
 		client := http.Client{Timeout: 8 * time.Second}
+		sigCtx, stopSig := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stopSig()
 		for {
-			req, e := http.NewRequest(method, strings.TrimRight(*url, "/")+path, bytes.NewReader(body))
+			req, e := http.NewRequestWithContext(sigCtx, method, strings.TrimRight(*url, "/")+path, bytes.NewReader(body))
 			if e != nil {
 				return e
 			}
@@ -134,6 +136,9 @@ func run(args []string) error {
 			}
 			r, e := client.Do(req)
 			if e != nil {
+				if sigCtx.Err() != nil {
+					return nil
+				}
 				return e
 			}
 			data, e := io.ReadAll(io.LimitReader(r.Body, 2*1024*1024))
@@ -152,7 +157,11 @@ func run(args []string) error {
 			if (args[0] != "top" && args[0] != "workers") || *once {
 				return nil
 			}
-			time.Sleep(2 * time.Second)
+			select {
+			case <-sigCtx.Done():
+				return nil
+			case <-time.After(2 * time.Second):
+			}
 		}
 	default:
 		return fmt.Errorf("unknown command %q", args[0])

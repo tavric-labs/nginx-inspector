@@ -140,7 +140,13 @@ static ngx_str_t clipped_string(ngx_pool_t *pool, ngx_str_t value, size_t cap) {
     return result;
 }
 
-/* Bit definitions are documented in docs/native-observations.md. No syscalls. */
+static ngx_str_t clipped_path(ngx_pool_t *pool, ngx_str_t value, size_t cap) {
+    size_t i;
+    for (i = 0; i < value.len; i++) {
+        if (value.data[i] == '?') { value.len = i; break; }
+    }
+    return clipped_string(pool, value, cap);
+}
 static ngx_uint_t io_state(ngx_http_request_t *r) {
     ngx_connection_t *client = r->connection, *up;
     ngx_uint_t bits = 0;
@@ -213,15 +219,8 @@ static inspector_ctx *context(ngx_http_request_t *r, ngx_flag_t create) {
         live_requests = ctx; live_count++;
         ctx->trace = ngx_pcalloc(r->pool, INSPECTOR_TRACE_MAX * sizeof(inspector_observation));
         ctx->subs = ngx_pcalloc(r->pool, INSPECTOR_SUB_MAX * sizeof(inspector_subrequest));
-        ctx->initial_path = clipped_string(r->pool, r->uri, 256);
-        ctx->original_path = r->unparsed_uri;
-        {
-            size_t i;
-            for (i = 0; i < ctx->original_path.len; i++) {
-                if (ctx->original_path.data[i] == '?') { ctx->original_path.len = i; break; }
-            }
-        }
-        ctx->original_path = clipped_string(r->pool, ctx->original_path, 256);
+        ctx->initial_path = clipped_path(r->pool, r->uri, 256);
+        ctx->original_path = clipped_path(r->pool, r->unparsed_uri, 256);
     }
     return ctx;
 }
@@ -238,7 +237,7 @@ static void observe(inspector_ctx *c, ngx_http_request_t *r, ngx_uint_t event, n
         if (!s) {
             if (!c->subs || c->sub_count == INSPECTOR_SUB_MAX) { c->sub_omitted++; return; }
             sub = ++c->sub_count; s = &c->subs[sub - 1]; s->request = r;
-            s->first = ngx_current_msec; s->initial_path = clipped_string(r->main->pool, r->uri, 128);
+            s->first = ngx_current_msec; s->initial_path = clipped_path(r->main->pool, r->uri, 128);
         }
         s->last = ngx_current_msec;
         if (event == OBS_HEADERS && !s->header) s->header = ngx_current_msec;
@@ -256,7 +255,7 @@ static void observe(inspector_ctx *c, ngx_http_request_t *r, ngx_uint_t event, n
     if (r == r->main) c->last_io = o->io;
     if (event == OBS_REWRITE) {
         location = ngx_http_get_module_loc_conf(r, ngx_http_core_module);
-        o->path = clipped_string(r->main->pool, r->uri, 128);
+        o->path = clipped_path(r->main->pool, r->uri, 128);
         o->location = clipped_string(r->main->pool, location->name, 128);
     }
 }
@@ -411,7 +410,7 @@ static void optional_variable(writer *w, ngx_http_request_t *r, ngx_int_t index)
     else string(w, value->data, value->len);
 }
 static void phase(writer *w, ngx_msec_t t, ngx_msec_t start) {
-    if (!t) literal(w, "null"); else number(w, (int64_t)(t - start));
+    if (!t) literal(w, "null"); else number(w, t >= start ? (int64_t)(t - start) : 0);
 }
 #include "inspector_native_json.h"
 static ngx_int_t log_request(ngx_http_request_t *r) {
@@ -420,20 +419,31 @@ static ngx_int_t log_request(ngx_http_request_t *r) {
     struct sockaddr_in dst;
     u_char buf[INSPECTOR_PAYLOAD_MAX];
     writer w;
-    ngx_msec_t start;
+    ngx_msec_t start, now_wall;
     ssize_t n;
     if (r != r->main || !cf->enabled || !c || !c->selected) return NGX_OK;
     observe(c, r, OBS_LOG, NGX_OK);
     w.p = buf; w.end = buf + sizeof(buf); w.full = 0;
     start = (ngx_msec_t) r->start_sec * 1000 + r->start_msec;
+    {
+        ngx_time_t *tp = ngx_timeofday();
+        now_wall = (ngx_msec_t) tp->sec * 1000 + tp->msec;
+    }
     literal(&w, "{\"schema\":2,\"id\":\"");
     number(&w, ngx_pid); literal(&w, "-"); number(&w, c->serial);
     literal(&w, "-"); number(&w, r->connection->number); literal(&w, "-"); number(&w, start);
     literal(&w, "\",\"started_ms\":"); number(&w, start);
-    literal(&w, ",\"duration_ms\":"); number(&w, ngx_current_msec - c->start_mono);
+    literal(&w, ",\"duration_ms\":"); number(&w, ngx_current_msec >= c->start_mono ? (ngx_msec_t)(ngx_current_msec - c->start_mono) : (now_wall >= start ? (ngx_msec_t)(now_wall - start) : 0));
     literal(&w, ",\"client\":"); string(&w, r->connection->addr_text.data, r->connection->addr_text.len);
     literal(&w, ",\"method\":"); string(&w, r->method_name.data, r->method_name.len);
-    literal(&w, ",\"path\":"); string(&w, r->uri.data, r->uri.len);
+    literal(&w, ",\"path\":");
+    {
+        size_t path_len = r->uri.len, qi;
+        for (qi = 0; qi < path_len; qi++) {
+            if (r->uri.data[qi] == '?') { path_len = qi; break; }
+        }
+        string(&w, r->uri.data, path_len);
+    }
     literal(&w, ",\"status\":"); number(&w, r->headers_out.status ? r->headers_out.status : r->err_status);
     literal(&w, ",\"request_bytes\":"); number(&w, r->request_length);
     literal(&w, ",\"response_body_bytes\":"); number(&w, c->body_bytes);
@@ -500,9 +510,16 @@ static void worker_snapshot(ngx_event_t *event) {
             literal(&w, "{\"id\":\""); number(&w, ngx_pid); literal(&w, "-"); number(&w, c->serial);
             literal(&w, "-"); number(&w, r->connection->number); literal(&w, "-"); number(&w, (int64_t) r->start_sec * 1000 + r->start_msec);
             literal(&w, "\",\"method\":"); string(&w, r->method_name.data, r->method_name.len);
-            literal(&w, ",\"path\":"); string(&w, r->uri.data, ngx_min(r->uri.len, 128));
+            literal(&w, ",\"path\":");
+            {
+                size_t path_len = ngx_min(r->uri.len, (size_t) 128), qi;
+                for (qi = 0; qi < path_len; qi++) {
+                    if (r->uri.data[qi] == '?') { path_len = qi; break; }
+                }
+                string(&w, r->uri.data, path_len);
+            }
             literal(&w, ",\"phase\":"); string(&w, (u_char *) observation_names[c->last_event], ngx_strlen(observation_names[c->last_event]));
-            literal(&w, ",\"elapsed_ms\":"); number(&w, ngx_current_msec - c->start_mono);
+            literal(&w, ",\"elapsed_ms\":"); number(&w, ngx_current_msec >= c->start_mono ? (ngx_msec_t)(ngx_current_msec - c->start_mono) : 0);
             literal(&w, ",\"io\":"); number(&w, io_state(r));
             literal(&w, ",\"status\":"); number(&w, r->headers_out.status ? r->headers_out.status : r->err_status);
             literal(&w, ",\"response_bytes\":"); number(&w, c->body_bytes);
@@ -525,12 +542,20 @@ static ngx_int_t add_phase(ngx_conf_t *cf, ngx_uint_t phase_id, ngx_http_handler
     *h = fn; return NGX_OK;
 }
 static ngx_int_t inspector_init(ngx_conf_t *cf) {
-    inspector_conf *conf = ngx_http_conf_get_module_loc_conf(cf, NGINX_INSPECTOR_MODULE);
-    ngx_http_core_main_conf_t *main_conf = ngx_http_conf_get_module_main_conf(cf, ngx_http_core_module);
-    ngx_hash_key_t *keys = main_conf->variables_keys->keys.elts;
+    inspector_conf *conf;
+    ngx_http_core_main_conf_t *main_conf;
+    ngx_http_conf_ctx_t *http_ctx;
+    ngx_hash_key_t *keys;
     ngx_str_t names[] = { ngx_string("gzip_ratio"), ngx_string("limit_req_status"), ngx_string("limit_conn_status") };
     ngx_int_t *indexes[] = { &gzip_ratio_index, &limit_req_index, &limit_conn_index };
     ngx_uint_t i, j;
+    if (!cf->ctx) return NGX_ERROR;
+    http_ctx = (ngx_http_conf_ctx_t *) cf->ctx;
+    if (!http_ctx->loc_conf || !http_ctx->main_conf) return NGX_ERROR;
+    conf = ngx_http_conf_get_module_loc_conf(cf, NGINX_INSPECTOR_MODULE);
+    main_conf = ngx_http_conf_get_module_main_conf(cf, ngx_http_core_module);
+    if (!conf || !main_conf || !main_conf->variables_keys) return NGX_ERROR;
+    keys = main_conf->variables_keys->keys.elts;
     /* Register optional NOHASH variables without requiring absent modules. */
     for (j = 0; j < 3; j++) {
         *indexes[j] = NGX_ERROR;

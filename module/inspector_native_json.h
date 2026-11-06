@@ -198,7 +198,7 @@ static void native_json(writer *w, ngx_http_request_t *r, inspector_ctx *c) {
         inspector_observation *o = &c->trace[i];
         if (i) literal(w, ",");
         literal(w, "{\"event\":"); value.data = (u_char *) observation_names[o->event]; value.len = ngx_strlen(value.data);
-        string(w, value.data, value.len); integer_field(w, "at_ms", o->at - c->start_mono);
+        string(w, value.data, value.len); integer_field(w, "at_ms", o->at >= c->start_mono ? (int64_t)(o->at - c->start_mono) : 0);
         integer_field(w, "subrequest", o->subrequest); integer_field(w, "io", o->io);
         integer_field(w, "status", o->status);
         integer_field(w, "request_buffered", o->request_buffered);
@@ -230,9 +230,14 @@ static void native_json(writer *w, ngx_http_request_t *r, inspector_ctx *c) {
     literal(w, "],\"subrequests\":[");
     for (j = 0; j < c->sub_count; j++) {
         inspector_subrequest *s = &c->subs[j]; sub = s->request;
+        ngx_str_t sub_path = sub->uri;
+        size_t qi;
+        for (qi = 0; qi < sub_path.len; qi++) {
+            if (sub_path.data[qi] == '?') { sub_path.len = qi; break; }
+        }
         if (j) literal(w, ",");
         literal(w, "{\"index\":"); number(w, j + 1); str_field(w, "initial_path", s->initial_path);
-        str_field(w, "path", sub->uri);
+        str_field(w, "path", sub_path);
         integer_field(w, "status", sub->headers_out.status ? sub->headers_out.status : sub->err_status);
         key(w, "first_ms"); phase(w, s->first, c->start_mono);
         key(w, "last_observed_ms"); phase(w, s->last, c->start_mono);
