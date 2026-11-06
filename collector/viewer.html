@@ -43,6 +43,7 @@
     .rp-facts{display:grid;grid-template-columns:190px 1fr;gap:5px 14px;margin:6px 0 0}.rp-facts dt{color:var(--muted);font-size:12.5px}.rp-facts dd{margin:0;font-size:12.5px;word-break:break-word}.rp-kind{display:inline-block;font:600 10px system-ui;padding:1px 6px;border-radius:999px;margin-right:4px;text-transform:uppercase;letter-spacing:.04em}.rp-kind.obs{background:#143a35;color:#6cdbb3}.rp-kind.cfg{background:#16294a;color:#91b9ff}
     .rp-att{display:grid;gap:5px;margin:8px 0}.rp-attbars{display:grid;gap:4px}.rp-attbar{display:grid;grid-template-columns:170px 1fr;gap:10px;align-items:center;font-size:12px;color:var(--muted)}.rp-attbar i{display:block;height:8px;border-radius:3px;background:#3d6f62}.rp-attbar i.h{background:#91b9ff}.rp-attbar i.r{background:#6cdbb3}.rp-attbar i.c{background:#f2ca80}
     .rp-log{margin:6px 0;padding-left:18px;font-size:12px;color:var(--text)}.rp-tbl{min-width:0;width:100%}.rp-tbl td{padding:6px 8px;border-bottom:1px solid var(--line);font-size:12px}.rp-tbl tr.on td{background:#16294a}
+    .rp-phrow{display:flex;flex-wrap:wrap;gap:8px;margin:4px 0 6px}.rp-phase{display:grid;gap:1px;border:1px solid #36486a;border-radius:8px;padding:6px 10px;background:#101a30;min-width:130px;cursor:help}.rp-phase b{font:600 12px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--text)}.rp-phase span{font-size:11.5px;color:var(--muted)}.rp-phase.seen{border-color:#3d6f62;background:#123029}.rp-phase.seen span{color:#6cdbb3}.rp-phase.live{border-color:#6cdbb3;box-shadow:0 0 0 1px #6cdbb360}.rp-phase.off{border-style:dashed;background:transparent}.rp-phase.off b{color:#9aaac1}
   </style>
 </head>
 <body>
@@ -152,7 +153,7 @@
     const box=node('div','legend');
     const line=(head,body,path)=>{const p=node('p','');p.append(node('b','',head+' '),document.createTextNode(body+' '));const a=node('a','','Read more');a.href=DOCS+path;a.target='_blank';a.rel='noopener noreferrer';p.append(a);return p;};
     box.append(node('p','',text));
-    box.append(line('Where it is:','the last of 7 stages the module saw this request reach. Stages 1 to 5 pass in about a millisecond, so a stream then shows Body until it ends. Completed requests keep every stage, see Inspect.','/workers#request-stages'));
+    box.append(line('Where it is:','the last of 7 stages the module saw this request reach. Each stage groups the real nginx phases (open Replay to see them). Stages 1 to 5 pass in about a millisecond, so a stream then shows Body until it ends. Completed requests keep every stage, see Inspect.','/workers#request-stages'));
     box.append(line('Client / Upstream:','Client is the connection from the browser or MCP client to nginx. Upstream is the connection from nginx to the backend it forwards to, such as the MCP gateway.','/workers#socket-state'));
     box.append(line('Bits:','the raw number behind the flags. Each bit is one nginx socket flag; 834 means client can write, upstream connected and writable, read timer armed.','/workers#socket-state'));
     return box;
@@ -208,7 +209,7 @@
     const grid=node('div','stage-grid'),strip=node('div','stage-strip');
     lifeStages.forEach((name,i)=>{
       const reached=first[i]!==null;
-      const card=node('div','stage-card'+(reached?'':' off')+(i===top?' top':''));
+      const card=node('div','stage-card'+(reached?'':' off')+(i===top?' top':''));card.title=STAGE_PHASES[i].map(x=>x.p).join(' · ');
       card.append(node('b','',(i+1)+' '+name));
       card.append(node('span','',reached?'reached at':'not reached'));
       card.append(node('em','',reached?ms(first[i])+' ms':'-'));
@@ -222,7 +223,7 @@
   function lifeCell(phase){
     const at=lifeOf[phase];const wrap=node('div','life');
     const bar=node('div','life-bar');
-    lifeStages.forEach((name,i)=>{const seg=node('i',at===undefined?'':(i<at?'done':i===at?'now':''));seg.title=name;bar.append(seg);});
+    lifeStages.forEach((name,i)=>{const seg=node('i',at===undefined?'':(i<at?'done':i===at?'now':''));seg.title=name+' · '+STAGE_PHASES[i].map(x=>x.p).join(', ');bar.append(seg);});
     wrap.append(bar);
     wrap.append(node('div','life-name',(nativeNames[phase]||phase||'unknown')));
     if(at!==undefined)wrap.append(node('div','life-stage','stage '+(at+1)+' of '+lifeStages.length+': '+lifeStages[at]));
@@ -268,6 +269,38 @@
   const SIGHT=new Map();
   const STAGE_DOING=['The request line and headers have been read.','nginx chose a location and applied rewrites.','Access checks, rate limits and subrequests run.','The content handler runs: a proxy call to the backend, or nginx answers itself.','The response headers are being sent.','The response body flows through the filter chain.','The request finished and was logged.'];
   const stageIcon=['1','2','3','4','5','6','7'];
+  /* nginx's real phases inside each of the 7 stages. hook:true means the module has a hook there. */
+  const STAGE_PHASES=[
+    [{p:'POST_READ',ev:['post_read'],hook:true,note:'First phase once the request line and headers are read.'}],
+    [{p:'SERVER_REWRITE',ev:['server_rewrite'],hook:true,note:'rewrite, set and if at server level.'},
+     {p:'FIND_CONFIG',hook:false,note:'nginx matches the URI to a location. Built in: no handler can be added here. The chosen location is recorded at the next hook.'},
+     {p:'REWRITE',ev:['location_rewrite'],hook:true,note:'rewrite, set and if inside the chosen location.'},
+     {p:'POST_REWRITE',hook:false,note:'Built-in check that restarts the location search after a rewrite. It shows up as extra rewrite visits.'}],
+    [{p:'PREACCESS',ev:['preaccess'],hook:true,note:'limit_req and limit_conn run here.'},
+     {p:'ACCESS',ev:['access'],hook:true,note:'allow, deny, auth_basic and auth_request run here.'},
+     {p:'POST_ACCESS',hook:false,note:'Built in: applies the satisfy rule to the access results.'}],
+    [{p:'PRECONTENT',ev:['precontent'],hook:true,note:'try_files and mirror run here, just before the content handler.'},
+     {p:'Request body filter',ev:['request_body_first_buffer','request_body_last_buffer','request_body_filter_return','request_body_spooled'],hook:true,note:'Upload buffers seen when nginx reads a request body. A filter, not a phase.'},
+     {p:'CONTENT',hook:false,note:'The handler that produces the response: proxy_pass, a file, return and so on. Not hooked. Its time is inferred as the gap from PRECONTENT to the response headers.'}],
+    [{p:'Header filters',ev:['header_filter','header_filter_return'],hook:true,note:'Not an nginx phase: a chain of filter functions (gzip, chunked, headers). The module sits in front and sees the result.'}],
+    [{p:'Body filters',ev:['body_first_buffer','body_filter_state','body_last_buffer'],hook:true,note:'Not an nginx phase: the filter chain called for each chunk of the response body.'}],
+    [{p:'LOG',ev:['log'],hook:true,note:'Final phase, after the response is done: the access log and the inspector event.'}]
+  ];
+  function phaseBlock(e,i,liveEv){
+    const wrap=node('div','rp-ph');wrap.append(node('h4','','nginx phases inside this stage'));
+    const row=node('div','rp-phrow');
+    const firstAt=evs=>{for(const t of (e&&e.native&&e.native.trace)||[])if(!t.subrequest&&evs.includes(t.event))return t.at_ms;return null;};
+    STAGE_PHASES[i].forEach(ph=>{
+      const at=ph.ev&&e?firstAt(ph.ev):null,live=!!liveEv&&!!ph.ev&&ph.ev.includes(liveEv);
+      const cls='rp-phase'+(ph.hook?'':' off')+(live?' live':'')+(ph.hook&&e&&at!==null?' seen':'');
+      const chip=node('span',cls);chip.append(node('b','',ph.p));
+      let sub=ph.hook?(e?(at!==null?'observed at '+ms(at)+' ms':'hooked, not seen on this request'):(live?'last seen here':'hooked')):'not observable';
+      if(ph.p==='CONTENT'&&e){const a=firstAt(['precontent']),b=firstAt(['header_filter','header_filter_return']);sub=(a!==null&&b!==null)?'inferred: about '+ms(Math.max(0,b-a))+' ms (precontent to headers)':'not observable';}
+      chip.append(node('span','',sub));chip.title=ph.note;row.append(chip);
+    });
+    wrap.append(row,node('p','muted','Observed: the module has a hook here and recorded it. Not observable: nginx runs this step internally and gives modules no place to attach, so it happens between its observed neighbours. Hover a phase for what it does.'));
+    return wrap;
+  }
   function stageFirsts(e){
     const first=Array(7).fill(null),n=e.native;
     if(n&&n.trace&&n.trace.length){for(const t of n.trace){if(t.subrequest)continue;const i=lifeOf[t.event];if(i!==undefined&&first[i]===null)first[i]=t.at_ms;}if(first[6]===null&&typeof e.duration_ms==='number')first[6]=e.duration_ms;return first;}
@@ -460,14 +493,14 @@
       const box=node('section','rp-capbox');
       const h=node('h3','',(cur+1)+' '+lifeStages[cur]+' · '+STAGE_DOING[cur]);box.append(h);
       if(e){
-        const when=m.first[cur];box.append(node('p','muted',when===null?'This stage was not reached.':'Reached at '+ms(when)+' ms'+(cur<6&&m.sp.spent[cur]!==null?' · spent '+ms(m.sp.spent[cur])+' ms before the next stage.':'.')));
+        const when=m.first[cur];box.append(node('p','muted',when===null?'This stage was not reached.':'Reached at '+ms(when)+' ms'+(cur<6&&m.sp.spent[cur]!==null?' · spent '+ms(m.sp.spent[cur])+' ms before the next stage.':'.')));box.append(phaseBlock(e,cur,null));
         const facts=stageFacts(e,cur);
         if(facts.length){const dl=node('dl','rp-facts');for(const [k,v,kind] of facts){dl.append(node('dt','',k));const dd=node('dd','mono');dd.append(node('span','rp-kind '+kind,kind==='cfg'?'configured':'observed'),document.createTextNode(' '+v));dl.append(dd);}box.append(dl);}
         else box.append(node('p','muted','The module recorded no extra detail for this stage.'));
         const ent=stageEntry(e,cur);if(ent&&typeof ent.io==='number'){const io=node('div','rp-io');io.append(node('h4','','Sockets when this stage was reached'),ioCell(ent.io));box.append(io);}
         if(m.sp.top===cur&&m.sp.spent[cur]>=1)box.append(node('p','rp-hot',"This is where the request spent most of its time."));
       }else{
-        box.append(node('p','muted','Last observed hook: '+(nativeNames[r.phase]||r.phase)+'. Elapsed about '+ms(r.elapsed_ms+(Date.now()-r.seenAt))+' ms.'));
+        box.append(node('p','muted','Last observed hook: '+(nativeNames[r.phase]||r.phase)+'. Elapsed about '+ms(r.elapsed_ms+(Date.now()-r.seenAt))+' ms.'));box.append(phaseBlock(null,cur,r.phase));
         const dl=node('dl','rp-facts');const add=(k,v)=>{dl.append(node('dt','',k));dl.append(node('dd','mono',v));};add('Status so far',r.status||'not set');add('Response bytes seen',count(r.response_bytes));add('Worker',r.worker);box.append(dl);
         const io=node('div','rp-io');io.append(node('h4','','What nginx\'s sockets are doing now'),ioCell(r.io));box.append(io);
         box.append(node('p','muted','Stages before this one are inferred as passed. They happen in about a millisecond, so a live view cannot show them.'));
@@ -485,7 +518,7 @@
     }
     if(r){const a=SIGHT.get(r.id);if(a&&a.log.length){const sec=node('section','rp-capbox');sec.append(node('h3','','Seen since you opened this page'));const ul=node('ul','rp-log');for(const l of a.log.slice(-8)){const lf=lifeOf[l.phase];ul.append(node('li','mono',new Date(l.at).toLocaleTimeString(undefined,{hour12:false})+' · '+(lf===undefined?l.phase:(lf+1)+' '+lifeStages[lf])+' · '+ioSummary(l.io||0)[0]+' · '+count(l.bytes)+' B'));}sec.append(ul,node('p','muted','Only changes the page noticed are listed, at most every 2 seconds.'));extra.append(sec);}}
     if(m.kind==='completed'&&m.reached.length){const sec=node('section','rp-capbox');sec.append(node('h3','','All stages at a glance'));const tb=node('table','rp-tbl'),tbd=node('tbody');
-      for(let i=0;i<7;i++){const tr=node('tr',i===cur?'on':'');tr.append(node('td','mono',(i+1)+' '+lifeStages[i]),node('td','mono',m.first[i]===null?'not reached':'at '+ms(m.first[i])+' ms'),node('td','mono',m.first[i]!==null&&i<6?ms(m.sp.spent[i])+' ms':''),node('td','',stageFacts(e,i).slice(0,2).map(f=>f[1]).join(' · ')));tbd.append(tr);}
+      for(let i=0;i<7;i++){const tr=node('tr',i===cur?'on':'');tr.append(node('td','mono',(i+1)+' '+lifeStages[i]),node('td','mono',m.first[i]===null?'not reached':'at '+ms(m.first[i])+' ms'),node('td','mono',m.first[i]!==null&&i<6?ms(m.sp.spent[i])+' ms':''),node('td','muted',STAGE_PHASES[i].map(x=>x.p).join(' · ')),node('td','',stageFacts(e,i).slice(0,2).map(f=>f[1]).join(' · ')));tbd.append(tr);}
       tb.append(tbd);sec.append(tb);extra.append(sec);}
   }
   setInterval(()=>{if(R.kind==='inflight'&&!$('replay-panel').hidden&&!document.hidden)paintReplay();},1000);

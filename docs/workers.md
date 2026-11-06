@@ -61,15 +61,37 @@ The **Where it is** column shows the last hook the module saw this request reach
 as a ladder of seven stages. It is a position in the request's life. It is not a live
 stack trace and not a promise about what nginx is executing at this instant.
 
-| Stage | Hooks that count as reaching it | What nginx is doing |
+| Stage | nginx's real phases inside it | What nginx is doing |
 |---|---|---|
-| 1 Parsed | post-read | The request line and headers have been read |
-| 2 Rewrite | server rewrite, location rewrite | Choosing the location and applying rewrites |
-| 3 Access | preaccess, access | Access modules, rate limits, `auth_request` |
-| 4 Content | precontent, request-body buffers | Reading an upload, running the content handler (often the proxy) |
-| 5 Headers | header filter | The response headers are being sent |
-| 6 Body | first, middle and last response buffer | Response data is flowing |
-| 7 Done | log | The request finished and is being logged |
+| 1 Parsed | `POST_READ` | The request line and headers have been read |
+| 2 Rewrite | `SERVER_REWRITE`, `FIND_CONFIG`, `REWRITE`, `POST_REWRITE` | Choosing the location and applying rewrites |
+| 3 Access | `PREACCESS`, `ACCESS`, `POST_ACCESS` | Access modules, rate limits, `auth_request` |
+| 4 Content | `PRECONTENT`, request-body filter, `CONTENT` | Reading an upload, running the content handler (often the proxy) |
+| 5 Headers | header filters (not a phase) | The response headers are being sent |
+| 6 Body | body filters (not a phase) | Response data is flowing |
+| 7 Done | `LOG` | The request finished and is being logged |
+
+The seven stages are this dashboard's readable grouping. Inside them are nginx's own eleven
+request phases and its two response filter chains, covered in the next section.
+
+### nginx's real phases inside each stage {#nginx-phases}
+
+nginx runs every HTTP request through eleven phases in a fixed order: `POST_READ`,
+`SERVER_REWRITE`, `FIND_CONFIG`, `REWRITE`, `POST_REWRITE`, `PREACCESS`, `ACCESS`,
+`POST_ACCESS`, `PRECONTENT`, `CONTENT` and `LOG`. The response then passes through the header
+filter chain and the body filter chain, which are not phases.
+
+The module registers a hook in seven of these, and in the filter chains:
+
+| Real phase or chain | Observed by the module | Why |
+|---|---|---|
+| `POST_READ`, `SERVER_REWRITE`, `REWRITE`, `PREACCESS`, `ACCESS`, `PRECONTENT`, `LOG` | Yes | nginx lets a module add a handler here |
+| `FIND_CONFIG`, `POST_REWRITE`, `POST_ACCESS` | **No** | Internal steps. nginx gives modules no place to attach. They run between their observed neighbours. The location chosen in `FIND_CONFIG` is recorded at the next hook. |
+| `CONTENT` | **No** (inferred) | The handler that makes the response (`proxy_pass`, a file, `return`). The module is not a content handler, so it does not hook it. Its time is inferred as the gap from `PRECONTENT` to the response headers. |
+| Request body filter, header filters, body filters | Yes | The module chains itself in front of the existing filters |
+
+Replay shows these phases inside each stage: a green chip with its time means observed, a
+dashed chip means not observable, and the content handler shows its inferred time.
 
 **Why a request can sit at "stage 6 of 7: Body" for a long time.** MCP servers answer with
 an event stream: the headers go out at once, then data arrives in pieces over minutes or
