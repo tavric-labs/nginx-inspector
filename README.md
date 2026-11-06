@@ -71,3 +71,5 @@ python3 tests/equivalence.py
 The production runtime is Go and C. Python is used for development fixtures and
 integration drivers. See [development](https://nginx-inspector.tavric-labs.net/development)
 and [release builds](https://nginx-inspector.tavric-labs.net/releases).
+
+Worker CPU, memory, scheduling and optional epoll/socket profiling are explained in the [worker anatomy guide](https://nginx-inspector.tavric-labs.net/worker-anatomy).

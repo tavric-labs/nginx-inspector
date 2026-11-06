@@ -123,6 +123,7 @@
     for(const p of ['p50','p95','p99'])$(p).textContent=ms(data[p+'_ms']);
     $('capture').classList.toggle('active',capture.active);$('capture-label').textContent=capture.active?'Capturing · '+numbers.format((capture.sample_permyriad??10000)/100)+'% sample'+(capture.remaining_seconds===null?'':' · '+count(capture.remaining_seconds)+'s remaining'):'Capture stopped';
   }
+  let workerEpollOpen=false;
   function renderWorkers(v){
     $('worker-state').textContent=v.available?'OS samples every 2s · '+(v.scoped?'scoped to configured nginx master':'all visible nginx processes'):(v.error||'OS statistics unavailable');
     const samples=v.live_workers||[],last=[...samples].sort((a,b)=>b.at_ms-a.at_ms)[0],clients=last?.client_connections;
@@ -130,9 +131,73 @@
     const counters=$('worker-counters');counters.replaceChildren();for(const [label,value]of facts){const item=node('div','native-fact');item.append(node('strong','',value),node('span','',label));counters.append(item);}
     const body=$('worker-body');body.replaceChildren();const mib=n=>n===null||n===undefined?'Unavailable':numbers.format(n/1048576)+' MiB';
     body.append(nativeTable('Processes · current read-only OS samples',['PID / role',{label:'CPU · one core',doc:'/workers#process-footprint'},{label:'RSS',doc:'/workers#process-footprint'},'Anonymous / file / shared','Threads / state',{label:'Slots used / capacity',doc:'/workers#three-different-concurrency-measures'},{label:'Sampled in flight',doc:'/workers#three-different-concurrency-measures'}],(v.processes||[]).map(p=>[p.pid+' / '+p.role,p.cpu_percent===null?'Warming / unavailable':numbers.format(p.cpu_percent)+'%',mib(p.rss_bytes),[p.anonymous_bytes,p.file_bytes,p.shared_bytes].map(mib).join(' / '),p.threads+' / '+p.state,p.traffic?p.traffic.connection_slots_used+' / '+p.traffic.connection_slots_capacity:'—',p.traffic?p.traffic.sampled_inflight:'—']),'RSS is an approximate resident-memory snapshot and can double-count shared pages across processes. It is separate from the request-pool estimates. CPU is a two-sample process delta, not per-request CPU.'));
+    renderWorkerAnatomy(body,v,mib);
     const requests=samples.flatMap(w=>w.requests.map(r=>[w.worker_pid,r.method+' '+r.path,ms(r.elapsed_ms)+' ms',lifeCell(r.phase),r.status||'Not set',ioCell(r.io),r.response_bytes]));
     body.append(nativeTable('In-flight requests · latest sampled worker snapshots',['Worker PID','Request',{label:'Elapsed',doc:'/workers#current-request-snapshots'},{label:'Where it is (last observed hook)',doc:'/workers#request-stages',tip:'The 7 request stages, why a stream stays at Body, and why it matters'},'Status',{label:'What nginx\'s sockets are doing now',doc:'/workers#socket-state',tip:'Client, upstream and bits: what they are and why we capture them'},{label:'Body bytes observed',doc:'/workers#current-request-snapshots'}],requests,v.capture_active?legendNote('At most 8 live requests per worker are shown. '+samples.reduce((n,w)=>n+w.omitted,0)+' live rows omitted. Snapshots expire after 4 seconds; short requests can finish between snapshots. An armed timer has not expired, and a stream can sit at one stage for a long time.'):'Capture is OFF. OS resource samples continue; request telemetry is cleared from this view.'));
     $('worker-updated').textContent=v.sampled_ms?'OS sample '+new Date(v.sampled_ms).toLocaleTimeString():'';
+  }
+
+  function renderWorkerAnatomy(body,v,mib){
+    const rate=(n,suffix=' /s')=>n===null||n===undefined?'Unavailable / warming':numbers.format(n)+suffix;
+    const pct=n=>rate(n,'%');
+    const processes=v.processes||[];
+    body.append(nativeTable('CPU & scheduler · live process deltas',[
+      'PID / role','User / system CPU · one core','Lifetime user / system CPU',
+      'Voluntary / involuntary switches per second','Scheduler dispatches per second',
+      'Run-queue wait · ms per second','CPU · µs per scheduler slice'
+    ],processes.map(p=>[p.pid+' / '+p.role,[pct(p.user_cpu_percent),pct(p.system_cpu_percent)].join(' / '),
+      [rate(p.user_cpu_seconds,' s'),rate(p.system_cpu_seconds,' s')].join(' / '),
+      [rate(p.voluntary_switches_per_second,''),rate(p.involuntary_switches_per_second,'')].join(' / '),
+      rate(p.scheduling?.slices_per_second,''),rate(p.scheduling?.runqueue_ms_per_second,''),rate(p.scheduling?.cpu_us_per_slice,'')]),
+      'Sources: Linux stat, status and schedstat, read every 2 seconds. Scheduling and context-switch counters describe the main thread. Context switches and scheduler slices are not epoll wakeups. Queue wait means runnable but waiting for a CPU; it excludes sleeping for network I/O. CPU per slice uses interval runtime / dispatches, not request CPU. First samples, resets and unavailable fields remain unmeasured.'));
+    body.append(nativeTable('Memory & faults · live OS snapshots',['PID / role','Data address space','Minor / major faults · lifetime'],
+      processes.map(p=>[p.pid+' / '+p.role,mib(p.data_bytes),text(p.minor_faults)+' / '+text(p.major_faults)]),
+      'VmData is virtual data space, not allocated physical memory. Minor faults need no disk read; major faults require I/O. RSS above includes shared pages; the dated PSS measurement below apportions them.'));
+    const roles=node('section','detail-card native-section');roles.append(node('h3','','Master, workers & connection slots'));
+    roles.append(node('p','detail-note','The master reads configuration, opens listeners and manages worker generations. Workers run request handlers and nonblocking socket I/O. Cache helpers may perform separate work. Worker CPU here excludes CPU of reaped children; adding child totals would double-count work.'));
+    roles.append(node('p','detail-note','Workers can share a listener socket. epoll tells a worker which registered descriptors are ready; EXCLUSIVE reduces competing listener wakeups but promises no fair request split. A worker may hold client sockets, upstream sockets and internal connections. One HTTP/2 connection may carry many requests. An FD count cannot exactly decompose nginx connection slots, or prove which HTTP connections are idle.'));
+    body.append(roles);
+    body.append(nativeTable('The worker event loop · mechanism, not an animated trace',['Step','What nginx does','What this inspector can substantiate'],[
+      ['1 · Wait','epoll waits for readiness or the next timer deadline','A bounded trace below measures syscall wall time and return counts.'],
+      ['2 · Dispatch','Run read/write handlers for ready descriptors','Live request hooks and I/O flags show selected request state, not every callback.'],
+      ['3 · Continue work','Parse HTTP, apply phases, proxy, filter and send available data','Inspect / Replay shows the observed HTTP lifecycle; one wake can advance several requests.'],
+      ['4 · Timers & posted work','Expire due timers and process deferred callbacks','Snapshot timers are part of observer overhead. A zero-event epoll return does not identify which timer ran.'],
+      ['5 · Repeat','Return to the event loop; sleep when no work is ready','Scheduler context switches cannot count this loop. No request thread is created per connection.']
+    ],'Network wait uses little CPU. Time inside epoll includes possible scheduling delay; it is not pure sleep time. Time between epoll calls includes work and descheduling, so it is not direct CPU time either.'));
+    const native=state.events.filter(e=>e.native?.nginx),pools=native.map(e=>e.native.nginx);
+    const median=key=>{const a=pools.map(p=>p[key]).filter(Number.isFinite).sort((a,b)=>a-b);return a.length?count(a[Math.floor(a.length/2)])+' B':'Unavailable';};
+    const cost=node('section','detail-card native-section');cost.append(node('h3','','What does one request cost?'));
+    cost.append(node('p','detail-note',native.length+' native completed events in the loaded request window · median observed pool used '+median('pool_used_bytes')+' / reserved '+median('pool_reserved_bytes')+'. These pool estimates include inspector allocations, exclude some large allocations and kernel socket buffers, and are separate from process RSS/PSS.'));
+    cost.append(node('p','detail-note','There is no direct per-request CPU measurement. A defensible workload average divides CPU consumed over a matched interval by the nginx request-counter delta over that same interval. It includes TLS, timers and background work. Sparse completion events and lifetime counters with different start times cannot provide that matched interval. The cgroup CPU filesystem is not required or automatically mounted.'));
+    body.append(cost);
+    const d=v.diagnostics;
+    if(!d){body.append(nativeTable('Privileged diagnostics · optional dated evidence',['Source','State'],[
+      ['FD/epoll, socket distribution, PSS/I/O, BPF trace, CPU profile','No sanitized diagnostics snapshot configured']
+    ],'The collector remains unprivileged. An operator can provide a sanitized JSON file through --worker-diagnostics; it is read once at startup. Protected readings are never silently substituted with estimates.'));return;}
+    const current=(pid,start)=>processes.some(p=>p.pid===pid&&p.start_ticks===start);
+    const captured='Captured '+new Date(d.started_ms).toISOString()+' to '+new Date(d.ended_ms).toISOString()+'. '+(current(d.master_pid,d.master_start_ticks)?'Master identity matches the live process sample.':'Historical master: current identity is unverified or changed.')+' These are historical measurements; age '+count(Math.max(0,Math.floor((Date.now()-d.ended_ms)/1000)))+' seconds.';
+    body.append(nativeTable('Privileged diagnostics · dated FD, memory & I/O snapshot',['PID / identity','Socket / file / epoll / eventfd FDs','PSS','Private / shared mapped pages','Read / write calls · lifetime'],
+      d.processes.map(p=>[p.pid+' · '+(current(p.pid,p.start_ticks)?'same process':'historical / unverified'),
+      ['socket','file','epoll','eventfd'].map(k=>text(p.fd_counts[k])).join(' / '),mib(p.pss_bytes),
+      [mib(p.private_bytes),mib(p.shared_bytes)].join(' / '),[p.read_calls,p.write_calls].map(text).join(' / ')]),
+      captured+' FD totals do not equal connection slots. PSS apportions shared pages; private/shared mapped pages are not kernel socket memory. /proc/io syscall totals are not counts of all networking syscalls.'));
+    body.append(nativeTable('Socket distribution · five dated samples',['Time','Worker PID','Established client sockets','Established upstream sockets','Shared listener inode / owning PIDs'],
+      d.socket_samples.flatMap(s=>s.workers.map(w=>[new Date(s.at_ms).toLocaleTimeString(),w.pid,w.client_sockets,w.upstream_sockets,s.listeners.map(l=>l.inode+' / '+l.pids.join(', ')).join(' ; ')])),
+      'Configured client and gateway ports only. Counts identify owning workers at each snapshot, not HTTP request counts or a fairness guarantee. Shared listener inode plus worker PIDs establishes shared ownership. Socket enumeration races with connections opening and closing.'));
+    const epoll=node('details','detail-card native-section');epoll.open=workerEpollOpen;epoll.addEventListener('toggle',()=>{if(epoll.isConnected)workerEpollOpen=epoll.open;});epoll.append(node('summary','','Epoll registrations · expand dated kernel evidence'));
+    epoll.append(nativeTable('Registered readiness interests',['Worker PID','Epoll FD','Target FD','Decoded flags'],
+      d.processes.flatMap(p=>p.epoll.map(e=>[p.pid,e.epoll_fd,e.target_fd,e.flags.join(' | ')])),
+      'EXCLUSIVE is listener wakeup selection; ET is edge-triggered readiness. IN/OUT are readiness interests, not traffic counters. ERR/HUP may be reported regardless of requested interests. This table omits pointer addresses and socket endpoints.'));body.append(epoll);
+    body.append(nativeTable('Event-loop trace · dated aggregate',['Worker PID','Operation','Calls','Calls per second'],
+      d.trace.calls.map(c=>[c.pid,c.name,c.count,numbers.format(c.count/d.trace.seconds)]),
+      d.trace.status+' · '+d.trace.seconds+' seconds. epoll_wait combines the selected epoll syscall variants. Syscall entries count attempts, including failures. Trace counts are not current rates and do not attribute timer reasons.'));
+    body.append(nativeTable('Epoll wall time & returned-event counts · dated histograms',['Measurement','Bucket','Observed calls'],[
+      ...d.trace.epoll_wall_us.map(b=>['Time inside epoll syscall · µs',b.range,b.count]),
+      ...d.trace.returned_events.map(b=>['Events returned per epoll call',b.range,b.count])
+    ],'Buckets are the tracer’s logarithmic ranges. Zero returned events usually means timeout; negative return values denote errors. Wall time includes descheduling. The trace starts/ends mid-activity and does not cover all worker lifetime.'));
+    body.append(nativeTable('CPU profile · dated sampled execution',['Sample share','Shared object','Symbol'],
+      d.profile.map(p=>[numbers.format(p.percent)+'%',p.dso,p.symbol]),
+      d.profile_status+' Samples describe observed instruction locations, not per-request cost. Unresolved symbols and frame-pointer gaps remain unknown. No samples in a function do not prove zero overhead.'));
   }
 
   function nativeSummary(){const events=state.events.filter(e=>e.native),n=events.map(e=>e.native),facts=[['Native events',events.length+' / '+state.events.length],['Worker PIDs seen',new Set(n.map(x=>x.nginx.worker_pid)).size],['Multiple attempts',n.filter(x=>x.attempts.length>1).length],['Body spooled',n.filter(x=>x.request_body.disk_buffered).length],['Child requests',n.reduce((v,x)=>v+x.subrequests.length,0)],['Rate rejections',n.filter(x=>x.policy.rate_limit_status==='REJECTED').length],['Cache HITs',events.filter(e=>e.upstream?.cache_status==='HIT').length],['Bandwidth limited',n.filter(x=>x.policy.limit_rate_bps>0).length]];const wrap=$('native-snapshot');wrap.replaceChildren();for(const [label,value]of facts){const item=node('div','native-fact');item.append(node('strong','',value),node('span','',label));wrap.append(item);}}

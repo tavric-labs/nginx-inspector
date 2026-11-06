@@ -44,6 +44,7 @@ func run(args []string) error {
 		f.StringVar(&c.ControlFile, "control-file", "", "shared nginx lease file")
 		f.StringVar(&c.ProcRoot, "proc-root", "", "optional Linux proc filesystem for worker CPU/RSS sampling")
 		f.StringVar(&c.NginxPIDFile, "nginx-pid-file", "", "scope worker process sampling to this master PID file")
+		f.StringVar(&c.WorkerDiagnosticsFile, "worker-diagnostics", "", "optional sanitized, dated worker diagnostics JSON; read once at startup")
 		f.StringVar(&c.ViewerHost, "viewer-host", "", "optional specific local IPv4 address for a read-only viewer")
 		f.IntVar(&c.UDPPort, "udp-port", 19876, "loopback UDP event port")
 		f.IntVar(&c.HTTPPort, "http-port", 19877, "loopback HTTP/control port")

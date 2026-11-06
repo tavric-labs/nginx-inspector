@@ -21,27 +21,35 @@ var page []byte
 type Config struct {
 	DB, ControlFile, ViewerHost, ProcRoot, NginxPIDFile string
 	UDPPort, HTTPPort, RetentionHours, MaxEvents        int
+	WorkerDiagnosticsFile                               string
 }
 type Server struct {
-	Store     *Store
-	Control   *Control
-	udp       *net.UDPConn
-	listeners []net.Listener
-	servers   []*http.Server
-	pending   chan Event
-	mu        sync.Mutex
-	stats     map[string]uint64
-	failure   bool
-	workers   *workerMonitor
+	Store       *Store
+	Control     *Control
+	udp         *net.UDPConn
+	listeners   []net.Listener
+	servers     []*http.Server
+	pending     chan Event
+	mu          sync.Mutex
+	stats       map[string]uint64
+	failure     bool
+	workers     *workerMonitor
+	diagnostics *WorkerDiagnostics
 }
 
 func NewServer(c Config) (s *Server, err error) {
 	s = &Server{workers: newWorkerMonitor(c.ProcRoot, c.NginxPIDFile), pending: make(chan Event, 2000), stats: map[string]uint64{}}
-	defer func() {
+	defer func(server *Server) {
 		if err != nil {
-			s.closeResources()
+			server.closeResources()
 		}
-	}()
+	}(s)
+	if c.WorkerDiagnosticsFile != "" {
+		s.diagnostics, err = loadWorkerDiagnostics(c.WorkerDiagnosticsFile)
+		if err != nil {
+			return nil, fmt.Errorf("worker diagnostics: %w", err)
+		}
+	}
 	if s.Store, err = NewStore(c.DB, c.RetentionHours, c.MaxEvents); err != nil {
 		return nil, err
 	}
@@ -184,7 +192,9 @@ func (s *Server) handler(readonly bool, port int) http.Handler {
 			w.Write(page)
 			return
 		case "/api/workers":
-			v = s.workers.snapshot(s.Control.Status().Active)
+			view := s.workers.snapshot(s.Control.Status().Active)
+			view.Diagnostics = s.diagnostics
+			v = view
 		case "/api/capture":
 			v = s.Control.Status()
 		case "/health":

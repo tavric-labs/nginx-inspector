@@ -25,13 +25,18 @@ func processClockTicks() float64 {
 	if e != nil {
 		return 0
 	}
-	for len(b) >= 16 {
-		key := binary.NativeEndian.Uint64(b[:8])
-		value := binary.NativeEndian.Uint64(b[8:16])
+	word := strconv.IntSize / 8
+	for len(b) >= 2*word {
+		var key, value uint64
+		if word == 8 {
+			key, value = binary.NativeEndian.Uint64(b[:8]), binary.NativeEndian.Uint64(b[8:16])
+		} else {
+			key, value = uint64(binary.NativeEndian.Uint32(b[:4])), uint64(binary.NativeEndian.Uint32(b[4:8]))
+		}
 		if key == 17 {
 			return float64(value)
 		}
-		b = b[16:]
+		b = b[2*word:]
 	}
 	return 0
 }
@@ -58,14 +63,17 @@ func parseProcessStat(raw string) (WorkerProcess, bool) {
 	n := func(i int) int64 { v, _ := strconv.ParseInt(f[i], 10, 64); return v }
 	p.Parent = int(n(1))
 	p.State = f[0]
-	p.ticks = n(11) + n(12)
+	p.userTicks, p.systemTicks = n(11), n(12)
+	p.ticks = p.userTicks + p.systemTicks
+	p.MinorFaults, p.MajorFaults = n(7), n(9)
 	p.Threads = n(17)
 	p.start = f[19]
+	p.StartTicks = p.start
 	p.Virtual = n(20)
 	return p, true
 }
 func parseMemory(raw string, p *WorkerProcess) {
-	values := map[string]**int64{"VmRSS": &p.RSS, "RssAnon": &p.Anonymous, "RssFile": &p.File, "RssShmem": &p.Shared}
+	values := map[string]**int64{"VmRSS": &p.RSS, "RssAnon": &p.Anonymous, "RssFile": &p.File, "RssShmem": &p.Shared, "VmData": &p.Data, "voluntary_ctxt_switches": &p.VoluntarySwitches, "nonvoluntary_ctxt_switches": &p.Preemptions}
 	for _, line := range strings.Split(raw, "\n") {
 		f := strings.Fields(line)
 		if len(f) < 2 {
@@ -77,10 +85,35 @@ func parseMemory(raw string, p *WorkerProcess) {
 		}
 		n, e := strconv.ParseInt(f[1], 10, 64)
 		if e == nil && n >= 0 {
-			n *= 1024
+			if strings.HasPrefix(f[0], "Vm") || strings.HasPrefix(f[0], "Rss") {
+				if len(f) != 3 || f[2] != "kB" || n > (1<<63-1)/1024 {
+					continue
+				}
+				n *= 1024
+			}
 			*target = &n
 		}
 	}
+}
+
+func parseScheduling(raw string) *ProcessScheduling {
+	f := strings.Fields(raw)
+	if len(f) != 3 {
+		return nil
+	}
+	n := make([]int64, 3)
+	for i := range n {
+		v, err := strconv.ParseInt(f[i], 10, 64)
+		if err != nil || v < 0 {
+			return nil
+		}
+		n[i] = v
+	}
+	// A zero schedstat triple can also mean scheduler statistics are disabled.
+	if n[0] == 0 && n[1] == 0 && n[2] == 0 {
+		return nil
+	}
+	return &ProcessScheduling{RuntimeNS: n[0], RunqueueNS: n[1], Slices: n[2]}
 }
 func readWorkerProcesses(root, pidfile string) WorkerView {
 	v := WorkerView{Processes: []WorkerProcess{}}
@@ -158,6 +191,9 @@ func readWorkerProcesses(root, pidfile string) WorkerView {
 			}
 			if b, e := boundedFile(filepath.Join(base, "status"), 16384); e == nil {
 				parseMemory(string(b), &p)
+			}
+			if b, e := boundedFile(filepath.Join(base, "schedstat"), 256); e == nil {
+				p.Scheduling = parseScheduling(string(b))
 			}
 			v.Processes = append(v.Processes, p)
 			if len(v.Processes) == 64 {

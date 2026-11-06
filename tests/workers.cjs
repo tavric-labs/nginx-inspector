@@ -1,0 +1,30 @@
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const {chromium}=require('playwright');
+(async()=>{
+ const browser=await chromium.launch({headless:true,args:['--no-sandbox']});
+ const page=await browser.newPage({viewport:{width:1600,height:1000}}),errors=[];
+ page.on('pageerror',e=>errors.push(e.message));
+ const now=Date.now(),proc={pid:11,parent_pid:10,role:'worker',state:'S',threads:1,start_ticks:'43',cpu_percent:1,user_cpu_percent:.6,system_cpu_percent:.4,user_cpu_seconds:10,system_cpu_seconds:5,rss_bytes:12000000,anonymous_bytes:3000000,file_bytes:9000000,shared_bytes:0,data_bytes:4000000,major_faults:0,minor_faults:20,voluntary_switches_per_second:2,involuntary_switches_per_second:0,scheduling:{slices_per_second:3,runqueue_ms_per_second:.05,cpu_us_per_slice:120}};
+ const diagnostic={schema:1,started_ms:now-120000,ended_ms:now,master_pid:10,master_start_ticks:'42',processes:[{pid:11,start_ticks:'43',fd_counts:{socket:5,file:3,epoll:1,eventfd:1},pss_bytes:3500000,private_bytes:2000000,shared_bytes:8000000,read_calls:10,write_calls:20,epoll:[{epoll_fd:7,target_fd:8,flags:['IN','EXCLUSIVE']}]}],socket_samples:[{at_ms:now-1000,listeners:[{inode:123,pids:[10,11]},{inode:124,pids:[10,11]}],workers:[{pid:11,client_sockets:2,upstream_sockets:1}]}],trace:{status:'Complete',seconds:60,calls:[{pid:11,name:'epoll_wait',count:60}],epoll_wall_us:[{range:'[512K, 1M)',count:40}],returned_events:[{range:'[0]',count:20}]},profile_status:'15 samples: too few for reliable conclusions',profile:[{percent:6.67,dso:'inspector.so',symbol:'<img src=x onerror=alert(1)>'}]};
+ let workers={available:true,scoped:true,master_pid:10,sampled_ms:now,processes:[proc],live_workers:[],capture_active:true,diagnostics:diagnostic};
+ const event={schema:2,id:'12-34-56',started_ms:now,duration_ms:3,client:'127.0.0.1',method:'GET',path:'/example',status:200,response_body_bytes:10,phases_ms:{},upstream:{},native:{nginx:{worker_pid:11,pool_used_bytes:14976,pool_reserved_bytes:16384},attempts:[],subrequests:[],request_body:{},policy:{}}};
+ await page.route('http://inspector.test/**',async route=>{
+  const path=new URL(route.request().url()).pathname;
+  const data={'/api/events':[event],'/api/summary':{retained:1,window:1,errors:0},'/api/capture':{active:true,sample_permyriad:10000,remaining_seconds:60},'/api/workers':workers};
+  await route.fulfill({contentType:path==='/'?'text/html':'application/json',body:path==='/'?fs.readFileSync('collector/viewer.html','utf8'):JSON.stringify(data[path]??{})});
+ });
+ await page.goto('http://inspector.test/');await page.locator('#show-workers').click();
+ await page.getByText('CPU & scheduler · live process deltas',{exact:true}).waitFor();
+ await page.getByText('same process',{exact:false}).first().waitFor();
+ assert((await page.locator('#worker-body').innerText()).includes('14,976 B'));
+ await page.getByText('Epoll registrations · expand dated kernel evidence',{exact:true}).click();
+ await page.getByText('IN | EXCLUSIVE',{exact:true}).waitFor();
+ await page.waitForResponse(r=>r.url().endsWith('/api/workers'));await page.getByText('IN | EXCLUSIVE',{exact:true}).waitFor();
+ assert.equal(await page.locator('#worker-body img').count(),0,'snapshot strings must be text, not HTML');
+ assert((await page.locator('#worker-body').innerText()).includes('123 / 10, 11 ; 124 / 10, 11'));
+ workers={...workers,diagnostics:undefined,capture_active:false,processes:[{...proc,user_cpu_percent:null,system_cpu_percent:null,scheduling:null,voluntary_switches_per_second:null}]};
+ await page.getByText('No sanitized diagnostics snapshot configured',{exact:true}).waitFor();
+ assert((await page.locator('#worker-body').innerText()).includes('Unavailable / warming'));
+ assert.deepEqual(errors,[]);await browser.close();console.log('PASS: worker deltas, unavailable state, dated evidence, multiple listeners, escaped snapshot strings');
+})().catch(e=>{console.error(e);process.exit(1)});

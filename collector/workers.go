@@ -77,31 +77,89 @@ func ValidateWorker(raw []byte) (WorkerTraffic, error) {
 }
 
 type WorkerProcess struct {
-	PID       int            `json:"pid"`
-	Parent    int            `json:"parent_pid"`
-	Role      string         `json:"role"`
-	State     string         `json:"state"`
-	Threads   int64          `json:"threads"`
-	RSS       *int64         `json:"rss_bytes"`
-	Anonymous *int64         `json:"anonymous_bytes"`
-	File      *int64         `json:"file_bytes"`
-	Shared    *int64         `json:"shared_bytes"`
-	Virtual   int64          `json:"virtual_bytes"`
-	CPU       *float64       `json:"cpu_percent"`
-	Traffic   *WorkerTraffic `json:"traffic"`
-	ticks     int64
-	start     string
+	PID               int                `json:"pid"`
+	Parent            int                `json:"parent_pid"`
+	Role              string             `json:"role"`
+	State             string             `json:"state"`
+	Threads           int64              `json:"threads"`
+	RSS               *int64             `json:"rss_bytes"`
+	Anonymous         *int64             `json:"anonymous_bytes"`
+	File              *int64             `json:"file_bytes"`
+	Shared            *int64             `json:"shared_bytes"`
+	Virtual           int64              `json:"virtual_bytes"`
+	CPU               *float64           `json:"cpu_percent"`
+	UserCPU           *float64           `json:"user_cpu_percent"`
+	SystemCPU         *float64           `json:"system_cpu_percent"`
+	UserSeconds       *float64           `json:"user_cpu_seconds"`
+	SystemSeconds     *float64           `json:"system_cpu_seconds"`
+	Data              *int64             `json:"data_bytes"`
+	MajorFaults       int64              `json:"major_faults"`
+	MinorFaults       int64              `json:"minor_faults"`
+	VoluntarySwitches *int64             `json:"voluntary_switches"`
+	Preemptions       *int64             `json:"involuntary_switches"`
+	VoluntaryRate     *float64           `json:"voluntary_switches_per_second"`
+	PreemptionRate    *float64           `json:"involuntary_switches_per_second"`
+	Scheduling        *ProcessScheduling `json:"scheduling"`
+	Traffic           *WorkerTraffic     `json:"traffic"`
+	ticks             int64
+	userTicks         int64
+	systemTicks       int64
+	StartTicks        string `json:"start_ticks"`
+	start             string
 }
+
+// Linux scheduler dispatches and context switches are not event-loop wakeups.
+type ProcessScheduling struct {
+	RuntimeNS           int64    `json:"runtime_ns"`
+	RunqueueNS          int64    `json:"runqueue_ns"`
+	Slices              int64    `json:"slices"`
+	RunqueueMSPerSecond *float64 `json:"runqueue_ms_per_second"`
+	SlicesPerSecond     *float64 `json:"slices_per_second"`
+	CPUUSPerSlice       *float64 `json:"cpu_us_per_slice"`
+}
+
+func counterRate(current, previous *int64, seconds float64) *float64 {
+	if current == nil || previous == nil || *current < *previous || seconds <= 0 {
+		return nil
+	}
+	v := float64(*current-*previous) / seconds
+	return &v
+}
+
+func processDeltas(p *WorkerProcess, old WorkerProcess, seconds, clockTicks float64) {
+	if p.start != old.start || seconds <= 0 {
+		return
+	}
+	if p.userTicks >= old.userTicks && p.systemTicks >= old.systemTicks && clockTicks > 0 {
+		u := 100 * float64(p.userTicks-old.userTicks) / clockTicks / seconds
+		s := 100 * float64(p.systemTicks-old.systemTicks) / clockTicks / seconds
+		total := u + s
+		p.CPU, p.UserCPU, p.SystemCPU = &total, &u, &s
+	}
+	p.VoluntaryRate = counterRate(p.VoluntarySwitches, old.VoluntarySwitches, seconds)
+	p.PreemptionRate = counterRate(p.Preemptions, old.Preemptions, seconds)
+	if n, o := p.Scheduling, old.Scheduling; n != nil && o != nil && n.RuntimeNS >= o.RuntimeNS && n.RunqueueNS >= o.RunqueueNS && n.Slices >= o.Slices {
+		wait := float64(n.RunqueueNS-o.RunqueueNS) / 1e6 / seconds
+		slices := float64(n.Slices-o.Slices) / seconds
+		n.RunqueueMSPerSecond, n.SlicesPerSecond = &wait, &slices
+		if n.Slices > o.Slices {
+			cpu := float64(n.RuntimeNS-o.RuntimeNS) / 1e3 / float64(n.Slices-o.Slices)
+			n.CPUUSPerSlice = &cpu
+		}
+	}
+}
+
 type WorkerView struct {
-	MasterPID     int             `json:"master_pid"`
-	Available     bool            `json:"available"`
-	Error         string          `json:"error,omitempty"`
-	At            int64           `json:"sampled_ms"`
-	ScanLimited   bool            `json:"scan_limited"`
-	Scoped        bool            `json:"scoped"`
-	Processes     []WorkerProcess `json:"processes"`
-	LiveWorkers   []WorkerTraffic `json:"live_workers"`
-	CaptureActive bool            `json:"capture_active"`
+	MasterPID     int                `json:"master_pid"`
+	Available     bool               `json:"available"`
+	Error         string             `json:"error,omitempty"`
+	At            int64              `json:"sampled_ms"`
+	ScanLimited   bool               `json:"scan_limited"`
+	Scoped        bool               `json:"scoped"`
+	Processes     []WorkerProcess    `json:"processes"`
+	LiveWorkers   []WorkerTraffic    `json:"live_workers"`
+	CaptureActive bool               `json:"capture_active"`
+	Diagnostics   *WorkerDiagnostics `json:"diagnostics,omitempty"`
 }
 type workerMonitor struct {
 	mu            sync.Mutex
@@ -186,9 +244,12 @@ func (w *workerMonitor) sample() {
 	next := map[int]WorkerProcess{}
 	for i := range view.Processes {
 		p := &view.Processes[i]
-		if old, ok := w.previous[p.PID]; ok && old.start == p.start && p.ticks >= old.ticks && w.clockTicks > 0 && !w.previousAt.IsZero() {
-			pct := 100 * float64(p.ticks-old.ticks) / w.clockTicks / now.Sub(w.previousAt).Seconds()
-			p.CPU = &pct
+		if w.clockTicks > 0 {
+			u, s := float64(p.userTicks)/w.clockTicks, float64(p.systemTicks)/w.clockTicks
+			p.UserSeconds, p.SystemSeconds = &u, &s
+		}
+		if old, ok := w.previous[p.PID]; ok && !w.previousAt.IsZero() {
+			processDeltas(p, old, now.Sub(w.previousAt).Seconds(), w.clockTicks)
 		}
 		next[p.PID] = *p
 	}

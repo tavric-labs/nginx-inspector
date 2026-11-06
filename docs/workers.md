@@ -3,6 +3,9 @@
 The Workers view combines two independent sources. Read-only Linux process samples
 describe resource use. On-demand native worker snapshots describe nginx work.
 
+See [Worker anatomy](./worker-anatomy.md) for CPU splits, scheduler deltas, fault
+counters and optional dated epoll/socket/PSS/profile evidence.
+
 ## Process footprint
 
 Configure the collector with an explicitly selected proc filesystem and nginx PID file:
