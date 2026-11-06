@@ -4,6 +4,7 @@ import argparse
 import collections
 import ctypes
 import http.server
+import ipaddress
 import json
 import math
 import mmap
@@ -232,7 +233,7 @@ refresh();setInterval(refresh,2000);
 
 
 class Collector:
-    def __init__(self, store, udp_port=19876, http_port=19877, control_file=None):
+    def __init__(self, store, udp_port=19876, http_port=19877, control_file=None, viewer_host=None):
         self.store, self.stop = store, threading.Event()
         self.pending = queue.Queue(maxsize=10000)
         self.stats = collections.Counter()
@@ -256,6 +257,8 @@ class Collector:
                 self.wfile.write(data)
 
             def do_POST(self):
+                if self.server is not owner.http:
+                    return self.reply({'error': 'viewer is read-only; use loopback controls'}, 403)
                 host = self.headers.get('Host')
                 if host not in {f'127.0.0.1:{self.server.server_port}', f'localhost:{self.server.server_port}'}:
                     return self.reply({'error': 'local host required'}, 403)
@@ -314,11 +317,20 @@ class Collector:
                 self.wfile.write(data)
         self.http = http.server.ThreadingHTTPServer(('127.0.0.1', http_port), Handler)
         self.http.daemon_threads = True
+        self.viewer = None
         try:
+            if viewer_host and viewer_host != '127.0.0.1':
+                address = ipaddress.IPv4Address(viewer_host)
+                if address.is_unspecified or address.is_multicast:
+                    raise ValueError('viewer-host must be a specific local IPv4 address')
+                self.viewer = http.server.ThreadingHTTPServer((str(address), self.http.server_port), Handler)
+                self.viewer.daemon_threads = True
             self.control = CaptureControl(control_file or (str(store.path) + '.control'))
         except BaseException:
             self.udp.close()
             self.http.server_close()
+            if self.viewer:
+                self.viewer.server_close()
             raise
 
     def receive(self):
@@ -360,16 +372,21 @@ class Collector:
         workers = [threading.Thread(target=self.receive), threading.Thread(target=self.persist)]
         for worker in workers:
             worker.start()
-        http = threading.Thread(target=self.http.serve_forever)
-        http.start()
+        servers = [self.http] + ([self.viewer] if self.viewer else [])
+        http_workers = [threading.Thread(target=server.serve_forever) for server in servers]
+        for worker in http_workers:
+            worker.start()
         self.stop.wait()
         self.control.stop_capture()
-        self.http.shutdown()
+        for server in servers:
+            server.shutdown()
         for worker in workers:
             worker.join()
         self.udp.close()
-        self.http.server_close()
-        http.join()
+        for server in servers:
+            server.server_close()
+        for worker in http_workers:
+            worker.join()
         self.control.close()
 
 
@@ -383,6 +400,7 @@ def main():
     serve.add_argument('--retention-hours', type=int, default=24)
     serve.add_argument('--max-events', type=int, default=100000)
     serve.add_argument('--control-file', help='shared heartbeat file mapped by nginx')
+    serve.add_argument('--viewer-host', help='optional specific IPv4 address for a read-only viewer; controls stay on loopback')
     top = sub.add_parser('top')
     top.add_argument('--url', default='http://127.0.0.1:19877')
     top.add_argument('--once', action='store_true')
@@ -420,7 +438,7 @@ def main():
             parser.error('positive retention and max-events 1..10000000 required')
         os.umask(0o077)
         Path(args.db).parent.mkdir(parents=True, exist_ok=True)
-        collector = Collector(Store(args.db, args.retention_hours, args.max_events), args.udp_port, args.http_port, args.control_file)
+        collector = Collector(Store(args.db, args.retention_hours, args.max_events), args.udp_port, args.http_port, args.control_file, args.viewer_host)
         for sig in (signal.SIGINT, signal.SIGTERM):
             signal.signal(sig, lambda *_: collector.stop.set())
         collector.run()

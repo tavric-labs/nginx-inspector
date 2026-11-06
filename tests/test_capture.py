@@ -1,4 +1,5 @@
 import ctypes
+import http.client
 import json
 from pathlib import Path
 import sys
@@ -74,7 +75,7 @@ class ControlAPITests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         root = Path(self.temp.name)
-        self.collector = Collector(Store(root / 'data.sqlite3'), 0, 0, root / 'control')
+        self.collector = Collector(Store(root / 'data.sqlite3'), 0, 0, root / 'control', '127.0.0.2')
         self.thread = threading.Thread(target=self.collector.run)
         self.thread.start()
         self.url = 'http://127.0.0.1:' + str(self.collector.http.server_port)
@@ -109,4 +110,21 @@ class ControlAPITests(unittest.TestCase):
             with self.assertRaises(urllib.error.HTTPError) as error:
                 self.post('/api/capture/start', payload)
             self.assertEqual(error.exception.code, 400)
+        self.assertFalse(self.collector.control.status()['active'])
+
+    def test_secondary_viewer_is_read_only_even_with_spoofed_host(self):
+        connection = http.client.HTTPConnection('127.0.0.2', self.collector.http.server_port, timeout=3)
+        connection.request('GET', '/api/summary')
+        response = connection.getresponse()
+        self.assertEqual(response.status, 200)
+        self.assertEqual(json.loads(response.read())['retained'], 0)
+        connection.close()
+        connection = http.client.HTTPConnection('127.0.0.2', self.collector.http.server_port, timeout=3)
+        connection.request('POST', '/api/capture/start', '{}',
+                           {'Content-Type': 'application/json',
+                            'Host': f'127.0.0.1:{self.collector.http.server_port}'})
+        response = connection.getresponse()
+        self.assertEqual(response.status, 403)
+        response.read()
+        connection.close()
         self.assertFalse(self.collector.control.status()['active'])

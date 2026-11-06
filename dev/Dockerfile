@@ -4,7 +4,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 WORKDIR /src
 RUN curl -fsSLO https://nginx.org/download/nginx-${NGINX_VERSION}.tar.gz && tar xzf nginx-${NGINX_VERSION}.tar.gz
 COPY module /src/module
-RUN cd nginx-${NGINX_VERSION} && ./configure --prefix=/opt/nginx --with-compat --with-http_ssl_module --add-dynamic-module=/src/module && make -j2 && make install && mkdir /opt/inspector && cp objs/ngx_http_inspector_module.so /opt/inspector/
+RUN cd nginx-${NGINX_VERSION} && ./configure --prefix=/opt/nginx --error-log-path=stderr --with-compat --with-http_ssl_module --add-dynamic-module=/src/module && make -j2 && make install && mkdir /opt/inspector && cp objs/ngx_http_inspector_module.so /opt/inspector/
 FROM ubuntu:24.04
 RUN apt-get update && apt-get install -y --no-install-recommends python3 libpcre2-8-0 zlib1g libssl3t64 ca-certificates && rm -rf /var/lib/apt/lists/* && useradd -u 10001 -m inspector
 COPY --from=build /opt/nginx /opt/nginx

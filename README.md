@@ -122,6 +122,12 @@ The loopback control API uses JSON POSTs to `/api/capture/start` (optional
 requests must have a same-origin local Host/Origin; no CORS mutation is enabled.
 Anyone with access to this host's loopback listener can control inspection.
 
+To share history on a specific private interface, add `--viewer-host PRIVATE_IP`
+to `serve`. This adds a second listener on the same HTTP port. It allows read-only
+history/status access and rejects every control POST, even with a forged Host.
+Capture controls remain on 127.0.0.1. This viewer has no login: only enable it on
+a network where everyone who can reach it may view the captured metadata.
+
 Before changing an existing nginx, back up its exact configuration, start the
 collector, load the module in an isolated canary using the **existing binary**,
 exercise proxying, errors, keepalive, and secret exclusions, then run `nginx -t`
