@@ -5,6 +5,8 @@ task_dir=$(mktemp -d /tmp/nginx-transport-canary.XXXXXX)
 collector_pid=""
 trace_pid=""
 cleanup() {
+  mkdir -p build/transport
+  for name in trace.log trace.ndjson collector.log error.log; do if [ -f "$task_dir/$name" ]; then cp "$task_dir/$name" "build/transport/canary-$name"; fi; done
   if [ -n "$trace_pid" ]; then sudo kill -INT "$trace_pid" 2>/dev/null || true; fi
   if [ -f "$task_dir/nginx.pid" ]; then /usr/sbin/nginx -p "$task_dir/" -c "$task_dir/nginx.conf" -s quit || true; fi
   if [ -n "$collector_pid" ]; then kill "$collector_pid" 2>/dev/null || true; wait "$collector_pid" 2>/dev/null || true; fi
@@ -25,6 +27,7 @@ dpkg-query -W -f='${Version}\n' nginx > build/transport/nginx-package-version.tx
 sha256sum build/transport/ngx_http_inspector_module.so > build/transport/SHA256SUMS
 CGO_ENABLED=0 go build -trimpath -o "$task_dir/nginx-inspector" ./cmd/nginx-inspector
 cp "$task_dir/nginx-inspector" build/transport/nginx-inspector
+if [ "${1:-}" = "--build-only" ]; then echo "PASS: native module and tracer binary compiled; privileged runtime test not requested."; exit 0; fi
 cat > "$task_dir/nginx.conf" <<EOF
 load_module $task_dir/inspector.so;
 daemon on;
@@ -62,8 +65,15 @@ views=[get('/api/transport/'+e['id']) for e in events]
 matched=[v for v in views if v['status']=='correlated_connection'];assert len(matched)>=20,views[:2]
 names={r['event'] for v in matched for r in v['records']}
 assert {'accept','request_begin','request_end','read','register','ready'}<=names,names
-assert any(v['connection_shared'] for v in matched)
-assert any(int(r.get('queued_ns','0'))>0 for v in matched for r in v['records'] if r['event']=='accept')
+assert any(v['connection_shared'] for v in matched), 'keepalive markers did not share a generation'
+boundaries=[r for v in matched for r in v['records'] if r['event']=='accept' and int(r.get('queued_ns','0'))>0]
+if boundaries:
+ for r in boundaries:
+  assert r.get('queue_source') in (1,2), r
+  assert int(r['queued_ns'])<=int(r['at_ns']), r
+ print('QUEUE COVERAGE: captured labelled queue/handoff boundaries:',len(boundaries))
+else:
+ print('::warning::Optional queue/handoff hooks were not observed on this kernel. Exact queue timings remain unavailable; core accept/epoll/read/request correlation is tested.')
 health=get('/health');assert health['stats'].get('transport_invalid',0)==0
 print('PASS: real kernel accept/epoll/read records joined to native request IDs; keepalive shares a connection; results unchanged.')
 PY

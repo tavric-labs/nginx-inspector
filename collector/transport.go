@@ -29,6 +29,7 @@ type TransportRecord struct {
 	Syn           string `json:"syn_ns,omitempty"`
 	Bytes         int64  `json:"bytes,omitempty"`
 	Flags         uint32 `json:"flags,omitempty"`
+	QueueSource   int    `json:"queue_source,omitempty"`
 }
 
 func decimalNS(s string, optional bool) bool {
@@ -62,7 +63,7 @@ func ValidateTransport(raw []byte) (TransportRecord, error) {
 	if d.Decode(new(any)) != io.EOF {
 		return t, fmt.Errorf("trailing JSON")
 	}
-	if t.Schema != 1 || t.Kind != "transport" || len(t.Session) != 32 || t.Master <= 0 || t.HostPID <= 0 || t.FD < 0 || t.FD > 1<<24 || !decimalNS(t.Generation, false) || t.Generation == "0" || !decimalNS(t.At, false) || !decimalNS(t.Duration, true) || !decimalNS(t.Queued, true) || !decimalNS(t.Syn, true) || t.Bytes < 0 || t.RequestNumber < 0 {
+	if t.Schema != 1 || t.Kind != "transport" || len(t.Session) != 32 || t.Master <= 0 || t.HostPID <= 0 || t.FD < 0 || t.FD > 1<<24 || !decimalNS(t.Generation, false) || t.Generation == "0" || !decimalNS(t.At, false) || !decimalNS(t.Duration, true) || !decimalNS(t.Queued, true) || !decimalNS(t.Syn, true) || t.Bytes < 0 || t.RequestNumber < 0 || t.QueueSource < 0 || t.QueueSource > 2 {
 		return t, fmt.Errorf("invalid transport bounds")
 	}
 	for _, c := range t.Session {
@@ -199,7 +200,7 @@ func (s *Store) Transport(id string) (TransportView, error) {
 	}
 	// Return connection history, explicitly shared across requests/streams. Do not
 	// call all socket activity within an HTTP lifetime that request's own work.
-	rows, e = s.db.Query("SELECT record FROM transport_records WHERE session=? AND host_pid=? AND fd=? AND generation=? ORDER BY length(at_ns),at_ns,seq LIMIT 257", m.Session, m.HostPID, m.FD, m.Generation)
+	rows, e = s.db.Query("SELECT record FROM transport_records WHERE session=? AND host_pid=? AND fd=? AND generation=? ORDER BY seq LIMIT 257", m.Session, m.HostPID, m.FD, m.Generation)
 	if e != nil {
 		return v, e
 	}

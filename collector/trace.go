@@ -252,17 +252,17 @@ func traceProgram(o TraceOptions, pids []int, inodes []uint64, session string) s
 
 	// Listener socket inode is verified against the selected master's ss ownership.
 	fmt.Fprintf(&b, `kprobe:inet_csk_reqsk_queue_hash_add { $sk=(struct sock*)arg0; $so=$sk->sk_socket; if($so!=0){$f=$so->file;if($f!=0){$ino=$f->f_inode->i_ino;if(%s){@syn[(uint64)arg1]=nsecs;}}}}
-kprobe:inet_csk_complete_hashdance { @handoff_req[tid,cpu]=(uint64)arg2;@handoff_syn[tid,cpu]=@syn[(uint64)arg2]; }
+kprobe:inet_csk_complete_hashdance { $sk=(struct sock*)arg0;$so=$sk->sk_socket;if($so!=0){$f=$so->file;if($f!=0){$ino=$f->f_inode->i_ino;if(%s){@handoff_req[tid,cpu]=(uint64)arg2;@handoff_syn[tid,cpu]=@syn[(uint64)arg2];@queued[(uint64)arg1]=nsecs;@qsrc[(uint64)arg1]=(uint64)2;@synchild[(uint64)arg1]=@syn[(uint64)arg2];}}}}
 kretprobe:inet_csk_complete_hashdance {delete(@handoff_req[tid,cpu]);delete(@handoff_syn[tid,cpu]);}
-kprobe:inet_csk_reqsk_queue_add { $sk=(struct sock*)arg0;$so=$sk->sk_socket;if($so!=0){$f=$so->file;if($f!=0){$ino=$f->f_inode->i_ino;if(%s){@queued[(uint64)arg2]=nsecs;@synchild[(uint64)arg2]=(uint64)0;if(@handoff_req[tid,cpu]==(uint64)arg1){@synchild[(uint64)arg2]=@handoff_syn[tid,cpu];}delete(@syn[(uint64)arg1]);}}}}
+kprobe:inet_csk_reqsk_queue_add { $sk=(struct sock*)arg0;$so=$sk->sk_socket;if($so!=0){$f=$so->file;if($f!=0){$ino=$f->f_inode->i_ino;if(%s){@queued[(uint64)arg2]=nsecs;@qsrc[(uint64)arg2]=(uint64)1;@synchild[(uint64)arg2]=(uint64)0;if(@handoff_req[tid,cpu]==(uint64)arg1){@synchild[(uint64)arg2]=@handoff_syn[tid,cpu];}delete(@syn[(uint64)arg1]);}}}}
 kprobe:inet_csk_reqsk_queue_drop {delete(@syn[(uint64)arg1]);}
-kprobe:sk_free,kprobe:__sk_free {delete(@queued[(uint64)arg0]);delete(@synchild[(uint64)arg0]);}
+kprobe:sk_free,kprobe:__sk_free {delete(@qsrc[(uint64)arg0]);delete(@queued[(uint64)arg0]);delete(@synchild[(uint64)arg0]);}
 kprobe:inet_csk_accept /%s/ { @accepting[tid]=1; }
-kretprobe:inet_csk_accept /%s && @accepting[tid]/ {if(retval!=0){@aq[tid]=@queued[(uint64)retval];@as[tid]=@synchild[(uint64)retval];delete(@queued[(uint64)retval]);delete(@synchild[(uint64)retval]);}delete(@accepting[tid]);}
-`, listen, listen, scope, scope)
+kretprobe:inet_csk_accept /%s && @accepting[tid]/ {if(retval!=0){@aq[tid]=@queued[(uint64)retval];@aqsrc[tid]=@qsrc[(uint64)retval];delete(@qsrc[(uint64)retval]);@as[tid]=@synchild[(uint64)retval];delete(@queued[(uint64)retval]);delete(@synchild[(uint64)retval]);}delete(@accepting[tid]);}
+`, listen, listen, listen, scope, scope)
 	for _, name := range []string{"accept4", "accept"} {
-		fmt.Fprintf(&b, `tracepoint:syscalls:sys_exit_%s /%s/ { if(args->ret>=0){$fd=(int64)args->ret;@gen[pid,$fd]=nsecs;%s}delete(@aq[tid]);delete(@as[tid]);}
-`, name, scope, emit("accept", `,\"queued_ns\":\"%llu\",\"syn_ns\":\"%llu\"`, `,@aq[tid],@as[tid]`))
+		fmt.Fprintf(&b, `tracepoint:syscalls:sys_exit_%s /%s/ { if(args->ret>=0){$fd=(int64)args->ret;@gen[pid,$fd]=nsecs;%s}delete(@aq[tid]);delete(@aqsrc[tid]);delete(@as[tid]);}
+`, name, scope, emit("accept", `,\"queued_ns\":\"%llu\",\"syn_ns\":\"%llu\",\"queue_source\":%u`, `,@aq[tid],@as[tid],@aqsrc[tid]`))
 	}
 	for _, marker := range []string{"begin", "end"} {
 		fmt.Fprintf(&b, `uprobe:%s:ngx_inspector_request_%s /%s/ { $fd=(int64)arg4;if($fd>=0 && $fd<16777216){if(!@gen[pid,$fd]){@gen[pid,$fd]=nsecs;}%s}}
@@ -285,7 +285,7 @@ tracepoint:syscalls:sys_exit_%s /%s && @read_at[tid]/ {$fd=@read_fd[tid];if(args
 	}
 	fmt.Fprintf(&b, `tracepoint:syscalls:sys_enter_close /%s/ {$fd=(int64)args->fd;if(@gen[pid,$fd]){%s delete(@gen[pid,$fd]);}}
 interval:s:%d { exit(); }
-END { clear(@syn);clear(@queued);clear(@synchild);clear(@gen);clear(@datafd);clear(@datagen);clear(@handoff_req);clear(@handoff_syn);clear(@aq);clear(@as);clear(@accepting);clear(@ctl);clear(@ctl_fd);clear(@ctl_ep);clear(@ctl_data);clear(@ctl_flags);clear(@ep_ptr);clear(@ep_fd);clear(@read_fd);clear(@read_at); }
+END { clear(@syn);clear(@queued);clear(@synchild);clear(@gen);clear(@datafd);clear(@datagen);clear(@handoff_req);clear(@handoff_syn);clear(@aq);clear(@aqsrc);clear(@qsrc);clear(@as);clear(@accepting);clear(@ctl);clear(@ctl_fd);clear(@ctl_ep);clear(@ctl_data);clear(@ctl_flags);clear(@ep_ptr);clear(@ep_fd);clear(@read_fd);clear(@read_at); }
 `, scope, emit("close", "", ""), int(o.Duration.Seconds()))
 	return b.String()
 }

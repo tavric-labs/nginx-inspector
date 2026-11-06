@@ -24,6 +24,10 @@ Numeric FD equality or a matching client address alone is never sufficient.
 | Read syscall | Returned byte count and syscall wall duration; no user buffer or packet data |
 | Native request markers | Selected context creation and log observation; begin is generally after headers were parsed |
 
+When the queue-add function is inlined, a captured `inet_csk_complete_hashdance`
+entry provides a separately labelled TCP-handoff boundary. This includes work
+before enqueue and is never presented as exact queue residence.
+
 The interval between SYN and accept hooks depends on TCP cookies, Fast Open and
 kernel paths. Missing hooks remain unknown. The initial implementation requires
 the listed kernel symbols and syscall tracepoints; unsupported environments fail
@@ -81,3 +85,7 @@ the explicit marker correlation plus up to the first 256 retained connection
 records. Truncation is shown; the selected marker remains available separately.
 Ambiguous session/generation matches return no guessed history. Late attachment,
 retention or collector restarts may remove evidence; unknown never means zero.
+
+Normal CI compiles the module and tracer without loading kernel probes. The real
+privileged canary is opt-in through workflow_dispatch with kernel_trace=true; a
+skipped runtime test is not evidence that the target kernel supports the probes.

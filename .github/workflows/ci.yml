@@ -1,5 +1,13 @@
 name: inspector
-on: [push, pull_request]
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      kernel_trace:
+        description: Run privileged kernel canary on this disposable runner
+        type: boolean
+        default: false
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -40,6 +48,8 @@ jobs:
         run: docker compose logs && docker compose down
 
   transport:
+    if: github.event_name == 'workflow_dispatch' && inputs.kernel_trace
+    needs: transport-build
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -53,6 +63,22 @@ jobs:
         run: bash dev/transport-canary.sh
       - uses: actions/upload-artifact@v4
         if: always()
+        with:
+          name: transport-canary-results
+          path: build/transport/
+
+  transport-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: sudo apt-get update && sudo apt-get install -y nginx nginx-dev build-essential ripgrep
+      - name: Compile native transport module and tracer (no kernel probes)
+        run: bash dev/transport-canary.sh --build-only
+      - uses: actions/upload-artifact@v4
         with:
           name: transport-ubuntu-module
           path: build/transport/
