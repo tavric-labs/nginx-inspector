@@ -24,7 +24,7 @@ use a tunnel if you want loopback-only access.
 
 ## Replay {#replay}
 
-The **Replay** view plays a request's journey through nginx's seven stages (Parsed, Rewrite,
+The **Replay** view starts with the full client → kernel queues → socket/epoll → nginx worker journey. Click **nginx HTTP processing** to open its detailed popup, which plays the request through nginx's seven stages (Parsed, Rewrite,
 Access, Content, Headers, Body, Done) and shows what nginx did at each one. It has two
 sections on the left.
 

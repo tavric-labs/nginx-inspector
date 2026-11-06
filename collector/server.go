@@ -105,7 +105,11 @@ func (s *Server) handler(readonly bool, port int) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
-		w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'")
+		policy := "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; frame-src 'self'; frame-ancestors 'none'"
+		if (r.URL.Path == "/journey" || r.URL.Path == "/replay/detail") && r.URL.Query().Get("embed") == "1" {
+			policy = strings.Replace(policy, "frame-ancestors 'none'", "frame-ancestors 'self'", 1)
+		}
+		w.Header().Set("Content-Security-Policy", policy)
 		reply := func(v any, code int) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(code)
@@ -191,7 +195,7 @@ func (s *Server) handler(readonly bool, port int) http.Handler {
 		var v any
 		var err error
 		switch r.URL.Path {
-		case "/journey":
+		case "/journey", "/replay/detail":
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.Write(journeyPage)
 			return

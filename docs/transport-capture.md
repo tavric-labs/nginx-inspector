@@ -1,7 +1,8 @@
 # Correlated transport capture
 
-Open **Request journey** (`/journey`) from Inspector or from a selected Replay
-request. The diagram separates network receive, TCP handshake tracking, the accept
+Open **Replay** and select a request. Its root view is the full client-to-worker
+journey. Click **nginx HTTP processing** for the existing seven-stage replay
+and phase details in a modal. Replay is the single entry point. The diagram separates network receive, TCP handshake tracking, the accept
 queue, socket buffers, epoll interest/readiness, and the nginx worker event loop.
 Only captured event points move the playback marker. Dashed components describe
 mechanisms for which the record has no event.

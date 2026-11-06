@@ -47,6 +47,8 @@
     .worker-insights{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-bottom:20px}.worker-insight{border:1px solid var(--line);border-radius:10px;padding:18px;background:#101a2b}.worker-insight h3{font-size:15px;margin:0 0 12px}.worker-insight .insight-value{font:600 21px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--text);margin:0 0 10px}.worker-insight p{color:var(--muted);font-size:13px;line-height:1.6;margin:8px 0}.worker-insight b{color:var(--text)}.worker-insight a{color:var(--blue);font-size:13px}.worker-disclosure{margin:16px 0;border:1px solid var(--line);border-radius:10px;padding:16px}.worker-disclosure>summary{font-size:15px;font-weight:600;cursor:pointer}.worker-disclosure>.detail-note{margin-bottom:16px}.worker-disclosure .native-section:last-child{margin-bottom:0}
     .kernel-path{border:1px solid var(--line);border-radius:10px;padding:20px;margin:18px 0;background:#101a2b}.kernel-path h3{margin:0 0 10px}.kernel-path p{font-size:13px;line-height:1.6;color:var(--muted)}.kernel-steps{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;padding:0;list-style:none;margin:16px 0}.kernel-steps button{width:100%;height:100%;text-align:left;white-space:normal;padding:12px;border-radius:8px;border:1px solid var(--line);background:#111d32;color:var(--text);line-height:1.45}.kernel-steps button[aria-pressed=true]{border-color:var(--blue);outline:1px solid var(--blue)}.kernel-steps b,.kernel-steps small{display:block}.kernel-steps small{color:var(--muted);font-size:11px;margin-top:4px}.kernel-steps .earlier{border-style:dashed}.kernel-explanation{border-left:2px solid var(--blue);padding:0 16px;margin:18px 0}.kernel-facts{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}.kernel-facts span{border:1px solid var(--line);padding:5px 9px;border-radius:5px;font-size:12px}.kernel-controls{display:flex;gap:10px;align-items:center}.kernel-controls span{font-size:12px;color:var(--muted)}
     .kernel-doc-link{display:inline-block;color:var(--blue);font-size:13px;line-height:1.5;margin-top:8px}
+    .deep-replay-dialog{width:calc(100vw - 48px);height:calc(100vh - 48px);max-width:1720px;max-height:none;padding:0;border:1px solid var(--line);border-radius:12px;background:var(--bg);color:var(--text)}.deep-replay-dialog[open]{display:flex;flex-direction:column}.deep-replay-dialog::backdrop{background:#030912d9}.deep-replay-heading{display:flex;justify-content:space-between;align-items:center;gap:20px;padding:14px 20px;border-bottom:1px solid var(--line);flex:none}.deep-replay-heading h2{font-size:17px;margin:0}.deep-replay-heading p{font-size:12px;color:var(--muted);margin:3px 0}.deep-replay-dialog iframe{width:100%;flex:1;min-height:0;border:0;background:var(--bg)}
+    .full-request-replay{min-width:0;height:calc(100vh - 190px);min-height:820px}.full-request-replay iframe{width:100%;height:100%;border:0;background:var(--bg)}.full-request-replay>p{padding:20px}.deep-replay-dialog>.replay-main{flex:1;min-height:0;overflow:auto;grid-auto-rows:max-content}
   </style>
 </head>
 <body>
@@ -56,7 +58,6 @@
     <div class="header-actions"><button id="show-requests" type="button" aria-pressed="true">Requests</button><button id="show-workers" type="button" aria-pressed="false">Workers</button><button id="show-replay" type="button" aria-pressed="false">Replay</button><span class="pill" id="capture"><span class="dot"></span><span id="capture-label">Checking capture</span></span><span class="pill">Read-only viewer</span><button id="pause" type="button" aria-pressed="false">Pause refresh</button></div>
   </header>
   <section class="panel native-overview" aria-label="Native nginx observations"><div class="panel-heading"><div><h2>Inside nginx · capture evidence</h2><p>Counts from the latest 100 completed records. Worker counts are observed PIDs, not a live inventory.</p></div><a href="https://nginx-inspector.tavric-labs.net/nginx-engine" target="_blank" rel="noopener noreferrer">Engine manual ↗</a></div><div id="native-snapshot" class="native-snapshot"></div></section>
-  <p><a class="kernel-doc-link" href="/journey">Request journey · kernel, queues and worker events ↗</a></p>
   <section id="worker-panel" hidden class="panel worker-panel" aria-labelledby="workers-title"><div class="panel-heading"><div><h2 id="workers-title">Workers & concurrency</h2><p id="worker-state">Loading process samples…</p></div><span class="connection" id="worker-updated"></span></div><div id="worker-counters" class="worker-counters"></div><div id="worker-body" class="worker-body"></div><p class="detail-note worker-note">Client connections are nginx-wide. Worker slots also include upstream/listening/internal connections. In-flight requests include sampled eligible requests observed while capture was active.</p></section>
   <section class="metrics" aria-label="Traffic summary">
     <article class="metric"><div class="metric-label">Stored requests</div><div class="metric-value" id="total">—</div><div class="metric-note" id="window-note">Loading history</div></article>
@@ -66,14 +67,14 @@
     <article class="metric"><div class="metric-label">Tail latency · p99</div><div class="metric-value"><span id="p99">—</span><small>ms</small></div><div class="metric-note">99% of requests are faster</div></article>
   </section>
   <section id="replay-panel" hidden class="panel replay-panel" aria-labelledby="replay-title">
-    <div class="panel-heading"><div><h2 id="replay-title">Replay · which stage did what <span id="replay-doc"></span></h2><p>Pick a completed or in-flight request and watch it move through nginx's seven stages, with what nginx did at each one.</p></div><span class="connection" id="replay-note"></span></div>
+    <div class="panel-heading"><div><h2 id="replay-title">Replay · full request journey <span id="replay-doc"></span></h2><p>Follow the client, kernel queues, socket readiness and worker. Click nginx processing to open its seven-stage HTTP replay.</p></div><span class="connection" id="replay-note"></span></div>
     <div class="replay-layout">
       <aside class="replay-side">
         <div class="rp-tabs" role="tablist" aria-label="Request source"><button id="tab-completed" type="button" role="tab" aria-selected="true">Completed <span id="n-completed" class="rp-count">0</span></button><button id="tab-inflight" type="button" role="tab" aria-selected="false">In flight <span id="n-inflight" class="rp-count">0</span></button></div>
         <label class="search"><span class="sr-only">Filter requests</span><input id="rp-search" type="search" placeholder="Filter by path, method or status…" autocomplete="off"></label>
         <div id="rp-list" class="rp-list" role="list"></div>
       </aside>
-      <div class="replay-main" id="rp-main"></div>
+      <div class="full-request-replay"><p id="rp-flow-empty" class="rp-hint">Pick a request to replay its full journey.</p><iframe id="rp-flow-frame" title="Full request replay: client, kernel queues and nginx worker" hidden></iframe></div>
     </div>
   </section>
   <section id="requests-panel" class="panel" aria-labelledby="requests-title">
@@ -94,6 +95,7 @@
   <div class="dialog-header"><h2 id="detail-title">Request details</h2><div class="dialog-actions"><button id="download" type="button" disabled>Download JSON</button><form method="dialog"><button id="close-detail" type="submit" autofocus>Close</button></form></div></div>
   <div class="dialog-body" id="detail-body" aria-live="polite"></div>
 </dialog>
+<dialog id="deep-replay-dialog" class="deep-replay-dialog" aria-labelledby="deep-replay-title"><div class="deep-replay-heading"><div><h2 id="deep-replay-title">Inside nginx · seven-stage replay</h2><p id="deep-replay-request"></p></div><button id="close-deep-replay" type="button" aria-label="Close detailed replay">Close</button></div><div class="replay-main" id="rp-main"></div></dialog>
 <script>
 (() => {
   'use strict';
@@ -277,7 +279,7 @@
   function nativeSummary(){const events=state.events.filter(e=>e.native),n=events.map(e=>e.native),facts=[['Native events',events.length+' / '+state.events.length],['Worker PIDs seen',new Set(n.map(x=>x.nginx.worker_pid)).size],['Multiple attempts',n.filter(x=>x.attempts.length>1).length],['Body spooled',n.filter(x=>x.request_body.disk_buffered).length],['Child requests',n.reduce((v,x)=>v+x.subrequests.length,0)],['Rate rejections',n.filter(x=>x.policy.rate_limit_status==='REJECTED').length],['Cache HITs',events.filter(e=>e.upstream?.cache_status==='HIT').length],['Bandwidth limited',n.filter(x=>x.policy.limit_rate_bps>0).length]];const wrap=$('native-snapshot');wrap.replaceChildren();for(const [label,value]of facts){const item=node('div','native-fact');item.append(node('strong','',value),node('span','',label));wrap.append(item);}}
   async function refresh() {
     if(state.paused||state.refreshing||document.hidden)return;state.refreshing=true;
-    try{const [s,events,capture,workers]=await Promise.all([json('/api/summary'),json('/api/events'),json('/api/capture'),json('/api/workers')]);state.events=events;nativeSummary();renderWorkers(workers);afterWorkers(workers);state.loaded=true;summary(s,capture);renderRows();$('connection').textContent='Connected · live updates';$('connection').className='connection good';$('banner').classList.remove('visible');$('updated').textContent='Updated '+new Date().toLocaleTimeString();}
+    try{const [s,events,capture,workers]=await Promise.all([json('/api/summary'),json('/api/events'),json('/api/capture'),json('/api/workers')]);state.events=events;nativeSummary();renderWorkers(workers);afterWorkers(workers);const firstLoad=!state.loaded;state.loaded=true;if(firstLoad){const wanted=new URL(location.href).searchParams.get('replay');if(wanted){showView('replay');openReplay('completed',wanted);}}summary(s,capture);renderRows();$('connection').textContent='Connected · live updates';$('connection').className='connection good';$('banner').classList.remove('visible');$('updated').textContent='Updated '+new Date().toLocaleTimeString();}
     catch(error){$('connection').textContent='Connection interrupted';$('connection').className='connection bad';$('banner').textContent='The collector is unavailable. '+(state.loaded?'Showing the last loaded requests.':'Retrying automatically.');$('banner').classList.add('visible');}
     finally{state.refreshing=false;}
   }
@@ -454,7 +456,7 @@
   function stageFacts(e,i){
     const n=e.native||{},r=n.routing||{},p=n.policy||{},resp=n.response||{},c=n.connection||{},rb=n.request_body||{},att=n.attempts||[],subs=n.subrequests||[],L=[];
     const add=(k,v,kind)=>{if(v!==undefined&&v!==null&&v!==''&&v!=='undefined')L.push([k,String(v),kind||'obs']);};
-    if(i===0){add('Request',e.method+' '+e.path);add('Connection',c.request_number?'request #'+c.request_number+(c.keepalive?' on a kept-alive connection':' on a fresh connection'):'');add('Protocol',[c.protocol,e.tls&&e.tls.version,e.tls&&e.tls.cipher].filter(Boolean).join(' · '));add('Request size',typeof e.request_bytes==='number'?count(e.request_bytes)+' bytes of headers':'');}
+    if(i===0){add('Request',e.method+' '+e.path);add('Connection',c.request_number?'request #'+c.request_number+(c.request_number>1?' on an existing connection':' (first reported request on this connection)'):'');add('Protocol',[c.protocol,e.tls&&e.tls.version,e.tls&&e.tls.cipher].filter(Boolean).join(' · '));add('Request size',typeof e.request_bytes==='number'?count(e.request_bytes)+' bytes of headers':'');}
     if(i===1){add('Server name',r.server_name);add('Location selected',r.location!==undefined?(r.location||'(default)')+(r.location_kind?' · '+r.location_kind:''):'');add('Path',r.initial_path&&r.initial_path!==e.path?r.initial_path+' → '+e.path:e.path);add('Rewrite visits',e.rewrite_visits);}
     if(i===2){add('Access policy',p.access_satisfy?'satisfy '+p.access_satisfy:'','cfg');add('Rate limiter',p.rate_limit_status||'no limiter status reported');add('Subrequests',subs.length?subs.map(x=>text(x.path||x.initial_path)+' → '+text(x.status)).join('; '):'none');}
     if(i===3){
@@ -515,7 +517,7 @@
     return null;
   }
   function openReplayPanel(){renderReplayList();if(!R.kind){const first=state.events[0];if(first)openReplay('completed',first.id);else buildMain();}else paintReplay();}
-  function openReplay(kind,id){stopReplay();R.kind=kind;R.id=id;R.copy=null;R.step=0;R.t=0;R.tab=kind;renderReplayList();buildMain();
+  function openReplay(kind,id){stopReplay();R.kind=kind;R.id=id;R.copy=null;R.step=0;R.t=0;R.tab=kind;renderReplayList();buildMain();renderFullJourney();
     const m=currentModel();if(m&&m.kind==='completed'){if(m.reached.length)R.playing=false;} paintReplay();}
   function stopReplay(){R.playing=false;clearInterval(R.timer);cancelAnimationFrame(R.raf);R.last=0;}
   function seqOf(m){return m.reached.length?m.reached:[0];}
@@ -545,8 +547,7 @@
     const svgWrap=node('div','rp-svgwrap');svgWrap.innerHTML='<svg id="rp-svg" viewBox="0 0 980 300" role="img" aria-label="The seven nginx stages a request passes through" xmlns="http://www.w3.org/2000/svg"><defs><marker id="rpa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#5b6b86"/></marker><marker id="rph" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#6cdbb3"/></marker></defs></svg>';
     const time=node('div','rp-time');time.id='rp-time';
     const cap=node('div','rp-cap');cap.id='rp-cap';const extra=node('div','rp-extra');extra.id='rp-extra';
-    const kernel=node('section','kernel-path');kernel.id='rp-kernel-path';kernel.setAttribute('aria-label','Kernel to nginx worker');
-    main.append(head,ctl,svgWrap,time,cap,kernel,extra);
+    main.append(head,ctl,svgWrap,time,cap,extra);
     const svg=$('rp-svg'),NS='http://www.w3.org/2000/svg';
     const mk=(tag,attrs,txt)=>{const el=document.createElementNS(NS,tag);for(const k in attrs)el.setAttribute(k,attrs[k]);if(txt!==undefined)el.textContent=txt;svg.append(el);return el;};
     mk('rect',{x:112,y:14,width:868,height:176,rx:8,class:'rp-nginx'});mk('text',{x:970,y:32,class:'rp-lab','text-anchor':'end'},'nginx worker');
@@ -571,74 +572,26 @@
     });
     const pk=document.createElementNS(NS,'g');pk.setAttribute('id','rp-pk');pk.setAttribute('class','rp-pk');const c=document.createElementNS(NS,'circle');c.setAttribute('r',9);pk.append(c);svg.append(pk);
   }
-  const KERNEL={id:null,step:0};
-  const KERNEL_STEPS=[
-    ['Network receive','NIC / vNIC or loopback','Packets enter through an interface or loopback. The receive path and IP/TCP processing deliver an ordered byte stream to a socket. The particular interface, CPU, packet-processing time and packet arrival timestamps were not captured.',
-      'Use this boundary to distinguish work before nginx sees HTTP from the HTTP stages below. Network processing and application execution can occur on different CPUs.'],
-    ['SYN queue','Incomplete TCP handshakes','For a new TCP connection, Linux tracks the handshake while it is incomplete. This is connection setup, not a queue of HTTP requests. SYN cookies can change how incomplete handshakes are tracked.',
-      'Handshake delay happens before HTTP parsing. A reused connection does not create a new SYN entry for every request.'],
-    ['Accept queue','Established, not accepted yet','A completed TCP connection can wait on the listener for accept(). Listener backlog limits this queue separately from the incomplete-handshake queue; deferred accept and TCP Fast Open can change the simplified sequence.',
-      'A large accept backlog can delay connection admission. This request record has no accept-queue residence time or queue-depth sample.'],
-    ['Listener becomes ready','epoll interest → ready list','nginx registers interest in its listener. When a connection can be accepted, Linux can report listener readiness through epoll. The interest list is the subscription; the ready list holds references to descriptors ready for I/O.',
-      'Readiness is a notification, not a copied HTTP request. EXCLUSIVE, an accept mutex or reuseport can affect which worker handles acceptance; this record does not trace the selection decision.'],
-    ['Worker accepts a socket','accept4 → connected FD','An accepting worker obtains a connected file descriptor, separate from the listener. nginx associates event handlers with the connection and arranges readiness monitoring for further nonblocking I/O.',
-      'The captured worker PID identifies the worker handling this request. It does not give the timestamp at which that worker accepted the connection.'],
-    ['Receive buffer becomes readable','Socket bytes → epoll readiness','TCP data can accumulate in the connected socket receive queue. epoll can report that socket as readable. Data may already be ready when the worker registers it; notification does not imply one packet or one HTTP request.',
-      'A worker can be runnable but waiting for CPU after readiness. Scheduler run-queue delay is a different measurement from socket-buffer wait.'],
-    ['Worker reads and parses','Nonblocking I/O · TLS when used','The event loop dispatches a connection handler. Reads consume available bytes or return EAGAIN when more data must be awaited. For HTTPS, TLS handling and HTTP parsing lead toward an HTTP request; buffered data may allow progress without a new read syscall.',
-      'A single connection can carry repeated HTTP/1 requests or multiplexed HTTP/2 streams. Each request does not require a fresh handshake, accept or epoll wakeup.'],
-    ['HTTP hooks take over','POST_READ → existing seven stages','After request headers are parsed, nginx can run POST_READ and the remaining HTTP lifecycle. This is where the existing phase observations can begin; an internal request or a capture started mid-request may have a different first observed hook.',
-      'The seven stages above describe HTTP processing. Their time origin is nginx request start, not NIC arrival or the start of a TCP handshake.']
-  ];
-  function paintKernelPath(m){
-    const host=$('rp-kernel-path');if(!host)return;
-    const e=m.kind==='completed'?m.e:null,r=m.kind==='inflight'?m.r:null;
-    if(KERNEL.id!==R.id){KERNEL.id=R.id;KERNEL.step=0;}
-    const g=e?.native?.nginx||{},c=e?.native?.connection||{},worker=g.worker_pid||r?.worker;
-    const post=e?.native?.trace?.find(t=>!t.subrequest&&t.event==='post_read');
-    const postAt=typeof post?.at_ms==='number'?post.at_ms:(typeof e?.phases_ms?.post_read==='number'?e.phases_ms.post_read:null);
-    const protocol=c.protocol||'',http2=/^HTTP\/2(?:\b|\.)/i.test(protocol),unsupported=/^HTTP\/3(?:\b|\.)|QUIC/i.test(protocol)||(g.event_backend&&g.event_backend!=='epoll');
-    const reused=typeof c.request_number==='number'&&c.request_number>1;
-    const key=JSON.stringify([R.id,m.kind,KERNEL.step,worker,c,postAt,g.event_backend,g.accept_mutex,g.configured_workers,e?.duration_ms,r?.io]);
-    if(host.dataset.model===key)return;host.dataset.model=key;host.replaceChildren();
-    host.append(node('h3','','Kernel → socket → nginx worker'));
-    const journey=node('a','kernel-doc-link','Open the visual request journey ↗');journey.href='/journey?id='+encodeURIComponent(R.id);journey.target='_blank';journey.rel='noopener noreferrer';host.append(journey);
-    host.append(node('p','','Walk through the transport mechanism separately from the recorded HTTP stages. Kernel steps are an explanation of the Linux TCP/epoll model, not a captured packet replay. Per-request kernel and queue timings are not measured.'));
-    const facts=node('div','kernel-facts');
-    for(const text of ['Worker: '+(worker||'not captured'),'Connection: '+(c.id??'not captured'),'Protocol: '+(protocol||'not captured'),'Request on connection: '+(c.request_number??'not captured'),'Event backend: '+(g.event_backend||'not captured'),'Accept mutex: '+(typeof g.accept_mutex==='boolean'?(g.accept_mutex?'on':'off'):'not captured')])facts.append(node('span','mono',text));host.append(facts);
-    if(unsupported)host.append(node('p','rp-warn','Applicability: this record reports '+(protocol||g.event_backend)+'. The TCP/epoll walkthrough is explanatory only and must not be treated as its observed transport path.'));
-    host.append(node('p','',reused?'Connection reuse observed: nginx reports request #'+c.request_number+'. SYN, accept and worker assignment belong to earlier connection setup; this request does not repeat that setup.':
-      c.request_number===1?'nginx reports the first request on this connection. Its TCP setup was not traced; the model does not prove which queue steps were observed.':
-      'Connection setup applicability is unknown: no request sequence number was captured. Do not infer a fresh handshake from this HTTP event.'));
-    if(http2)host.append(node('p','','HTTP/2: socket readiness is connection-level, while HTTP frames identify streams. One readiness return may advance several streams; this request cannot be matched to a unique epoll return from these observations.'));
-    const list=node('ol','kernel-steps');
-    KERNEL_STEPS.forEach(([title,owner],i)=>{
-      const li=node('li',''),earlier=reused&&i>=1&&i<=4;
-      const b=node('button',earlier?'earlier':'');b.type='button';b.setAttribute('aria-pressed',String(i===KERNEL.step));
-      b.append(node('b','',(i+1)+' · '+title),node('small','',owner),node('small','',earlier?'Earlier connection setup':i===7&&postAt!==null?'POST_READ observed · +'+ms(postAt)+' ms':'Mechanism · time not measured'));
-      b.onclick=()=>{KERNEL.step=i;paintKernelPath(m);};li.append(b);list.append(li);
-    });host.append(list);
-    const selected=KERNEL_STEPS[KERNEL.step],explain=node('div','kernel-explanation');
-    explain.append(node('h4','',(KERNEL.step+1)+' · '+selected[0]),node('p','',selected[2]),node('p','',selected[3]));
-    if(reused&&KERNEL.step>=1&&KERNEL.step<=4)explain.append(node('p','','For this request: connection setup happened earlier. Its duration is unknown, rather than zero.'));
-    host.append(explain);
-    const controls=node('div','kernel-controls');
-    const back=ctlBtn('Previous transport step',()=>{KERNEL.step--;paintKernelPath(m);});back.disabled=KERNEL.step===0;
-    const next=ctlBtn('Next transport step',()=>{KERNEL.step++;paintKernelPath(m);});next.disabled=KERNEL.step===KERNEL_STEPS.length-1;
-    controls.append(back,node('span','','Explanation step '+(KERNEL.step+1)+' of '+KERNEL_STEPS.length+' · independent of HTTP playback'),next);host.append(controls);
-    host.append(nativeTable('Time accounting · what was actually measured',['Interval','For this request'],[
-      ['Kernel network-stack CPU time','Not measured'],
-      ['SYN handshake / queue residence',reused?'Earlier connection setup · duration unknown':'Not measured'],
-      ['Accept-queue residence',reused?'Earlier connection setup · duration unknown':'Not measured'],
-      ['Socket ready → worker scheduled','Not measured'],
-      ['Socket reads / TLS / parsing breakdown','Not measured'],
-      ['POST_READ hook offset',postAt!==null?'Observed +'+ms(postAt)+' ms from nginx request start':'Not captured'],
-      ['nginx HTTP request duration',e?ms(e.duration_ms)+' ms · observed HTTP elapsed time':'Still in flight · no final duration']
-    ],'Unknown is not zero. Aggregate worker epoll histograms and CPU samples are not linked to this request and cannot fill these gaps. Measuring them requires a separate, correlated kernel trace with defined connection/stream boundaries.'));
-    host.append(node('p','','Queue guide: SYN queue = incomplete handshakes; accept queue = established connections waiting for accept; socket receive queue = buffered bytes; epoll ready list = ready descriptor references; CPU run queue = runnable threads. These are different queues, not one request pipeline.'));
-    const docs=node('a','kernel-doc-link','Read the kernel-to-worker guide');docs.href=DOCS+'/kernel-to-worker';docs.target='_blank';docs.rel='noopener noreferrer';host.append(docs);
+  let deepReplayOpener=null;
+  function renderFullJourney(){
+    const frame=$('rp-flow-frame');
+    if(!R.id){frame.hidden=true;$('rp-flow-empty').hidden=false;return;}
+    $('rp-flow-empty').hidden=true;frame.hidden=false;
+    const url=new URL('/replay/detail',location.origin);url.searchParams.set('embed','1');url.searchParams.set('root_replay','1');url.searchParams.set('id',R.id);
+    if(frame.getAttribute('src')!==url.pathname+url.search)frame.src=url.pathname+url.search;
   }
-
+  function openDetailedReplay(id,stage=null){
+    if(id!==R.id)return;
+    let m=currentModel();if(m?.kind==='gone'&&m.done){openReplay('completed',id);m=currentModel();}
+    deepReplayOpener=document.activeElement;const request=m?.e||m?.r;
+    $('deep-replay-request').textContent=request?request.method+' '+request.path+' · '+id:id;
+    if(stage!==null&&m?.kind==='completed'){pauseReplay();if(R.mode==='story'){const k=seqOf(m).indexOf(stage);if(k>=0)R.step=k;}else if(m.first[stage]!==null)R.t=m.first[stage];paintReplay();}
+    if(!$('deep-replay-dialog').open)$('deep-replay-dialog').showModal();
+  }
+  function closeDetailedReplay(){if($('deep-replay-dialog').open)$('deep-replay-dialog').close();}
+  $('close-deep-replay').onclick=closeDetailedReplay;
+  $('deep-replay-dialog').addEventListener('close',()=>{pauseReplay();(deepReplayOpener?.isConnected?deepReplayOpener:$('show-replay')).focus({preventScroll:true});});
+  window.addEventListener('message',e=>{if(e.origin===location.origin&&e.source===$('rp-flow-frame').contentWindow&&e.data?.type==='inspector-open-nginx'&&e.data.id===R.id)openDetailedReplay(R.id);});
   function ctlBtn(label,fn,cls,aria){const b=node('button',cls||'',label);b.type='button';b.onclick=fn;if(aria)b.setAttribute('aria-label',aria);return b;}
   function paintReplay(){
     if(!R.kind)return;
@@ -652,13 +605,12 @@
     }
     const e=m.kind==='completed'?m.e:null,r=m.kind==='inflight'?m.r:null;
     const cur=stageAt(m);
-    paintKernelPath(m);
     /* head */
     head.replaceChildren();
     const title=node('div','rp-title');
     if(e)title.append(node('span','method',e.method),node('span','mono rp-ttl',e.path),node('span','status '+statusClass(e.status),e.status),node('span','mono muted',ms(e.duration_ms)+' ms in total'));
     else title.append(node('span','method',r.method),node('span','mono rp-ttl',r.path),node('span','status '+(r.status?statusClass(r.status):''),r.status||'status not set'),node('span','mono muted rp-live','live · about '+ms(r.elapsed_ms+(Date.now()-r.seenAt))+' ms elapsed'));
-    const kernelLink=node('a','kernel-doc-link','Kernel → worker path ↓');kernelLink.href='#rp-kernel-path';head.append(title,kernelLink);
+    head.append(title);
     /* controls */
     ctl.replaceChildren();
     if(m.kind==='completed'){
@@ -736,7 +688,7 @@
   $('tab-inflight').onclick=()=>{R.tab='inflight';renderReplayList();};
   $('rp-search').addEventListener('input',renderReplayList);
   $('replay-doc').append(docLink('/dashboard#replay','Replay'));
-  function showView(name){$('worker-panel').hidden=name!=='workers';$('requests-panel').hidden=name!=='requests';$('replay-panel').hidden=name!=='replay';document.querySelector('.metrics').hidden=name!=='requests';for(const [id,v] of [['show-requests','requests'],['show-workers','workers'],['show-replay','replay']])$(id).setAttribute('aria-pressed',String(name===v));if(name==='replay')openReplayPanel();else stopReplay();}
+  function showView(name){$('native-snapshot').closest('section').hidden=name==='replay';$('worker-panel').hidden=name!=='workers';$('requests-panel').hidden=name!=='requests';$('replay-panel').hidden=name!=='replay';document.querySelector('.metrics').hidden=name!=='requests';for(const [id,v] of [['show-requests','requests'],['show-workers','workers'],['show-replay','replay']])$(id).setAttribute('aria-pressed',String(name===v));if(name==='replay')openReplayPanel();else stopReplay();}
   $('show-workers').onclick=()=>showView('workers');$('show-requests').onclick=()=>showView('requests');$('show-replay').onclick=()=>showView('replay');
   $('download').onclick=()=>{if(!state.detail)return;const url=URL.createObjectURL(new Blob([JSON.stringify(state.detail,null,2)],{type:'application/json'})),link=node('a');link.href=url;link.download='nginx-request-'+state.detail.id+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
   $('request-dialog').addEventListener('close',()=>{state.detailRequest++;if(!state.trigger?.isConnected)$('search').focus();});

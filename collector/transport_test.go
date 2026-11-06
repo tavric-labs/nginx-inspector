@@ -2,6 +2,7 @@ package collector
 
 import (
 	"fmt"
+	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -107,6 +108,26 @@ func TestTraceProgramUsesStableMarkersAndNoPayloadReads(t *testing.T) {
 	for _, bad := range []string{"args->buf", "skb->data", "comm==", "system(", "\n+kprobe", `\\\"schema`} {
 		if strings.Contains(script, bad) {
 			t.Fatal("unsafe or malformed trace", bad)
+		}
+	}
+}
+
+func TestReplayEmbeddingPolicy(t *testing.T) {
+	s := &Server{}
+	for _, path := range []string{"/", "/journey", "/replay/detail", "/replay/detail?embed=1"} {
+		request := httptest.NewRequest("GET", "http://127.0.0.1:19877"+path, nil)
+		response := httptest.NewRecorder()
+		s.handler(false, 19877).ServeHTTP(response, request)
+		if response.Code != 200 {
+			t.Fatal(path, response.Code)
+		}
+		policy := response.Header().Get("Content-Security-Policy")
+		want := "frame-ancestors 'none'"
+		if strings.Contains(path, "embed=1") {
+			want = "frame-ancestors 'self'"
+		}
+		if !strings.Contains(policy, want) || !strings.Contains(policy, "frame-src 'self'") {
+			t.Fatal(path, policy)
 		}
 	}
 }
