@@ -64,7 +64,7 @@ The example PID is synthetic: verify the actual nginx master before running.
 The command verifies worker roles/start times and listener ownership, restricts
 syscall and user probes to those worker PIDs, and stops if their generation changes.
 Listener inode filters scope TCP queue probes. No socket endpoints, raw kernel
-pointers, memory dumps or payloads are emitted. Dependencies are bpftrace, ss, nm
+pointers, memory dumps or payloads are emitted. Dependencies are bpftrace and ss
 and readable kernel BTF; the tracer never installs packages.
 
 Stop with SIGINT/SIGTERM. Sessions allow whole-second durations from 1 to 600

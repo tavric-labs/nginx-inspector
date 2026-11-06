@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"crypto/rand"
+	"debug/elf"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -144,9 +145,8 @@ func RunTrace(ctx context.Context, o TraceOptions, out, diagnostics io.Writer) e
 		return e
 	}
 	// Confirm the module exports the stable ABI before loading any probes.
-	b, e := exec.Command("nm", "-D", o.Module).Output()
-	if e != nil || !strings.Contains(string(b), " ngx_inspector_request_begin") || !strings.Contains(string(b), " ngx_inspector_request_end") {
-		return fmt.Errorf("selected module has no request-correlation marker ABI")
+	if e := verifyMarkerABI(o.Module); e != nil {
+		return e
 	}
 	sessionBytes := make([]byte, 16)
 	if _, e = rand.Read(sessionBytes); e != nil {
@@ -317,4 +317,27 @@ interval:s:%d { exit(); }
 END { clear(@syn);clear(@queued);clear(@synchild);clear(@gen);clear(@datafd);clear(@datagen);clear(@handoff_req);clear(@handoff_syn);clear(@aq);clear(@aqsrc);clear(@qsrc);clear(@as);clear(@accepting);clear(@ctl);clear(@ctl_fd);clear(@ctl_ep);clear(@ctl_data);clear(@ctl_flags);clear(@ep_ptr);clear(@ep_fd);clear(@read_fd);clear(@read_at); }
 `, scope, emit("close", "", ""), int(o.Duration.Seconds()))
 	return b.String()
+}
+
+// Read exported symbols directly: production hosts need no binutils installation.
+func verifyMarkerABI(path string) error {
+	f, err := elf.Open(path)
+	if err != nil {
+		return fmt.Errorf("cannot read marker module ELF: %w", err)
+	}
+	defer f.Close()
+	symbols, err := f.DynamicSymbols()
+	if err != nil {
+		return fmt.Errorf("cannot read marker module symbols: %w", err)
+	}
+	found := map[string]bool{}
+	for _, sym := range symbols {
+		if sym.Section != elf.SHN_UNDEF && elf.ST_TYPE(sym.Info) == elf.STT_FUNC && (elf.ST_BIND(sym.Info) == elf.STB_GLOBAL || elf.ST_BIND(sym.Info) == elf.STB_WEAK) {
+			found[sym.Name] = true
+		}
+	}
+	if !found["ngx_inspector_request_begin"] || !found["ngx_inspector_request_end"] {
+		return fmt.Errorf("selected module has no request-correlation marker ABI")
+	}
+	return nil
 }
