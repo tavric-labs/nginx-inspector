@@ -9,7 +9,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: python3 -m unittest discover -s tests -v
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go test -race ./...
+      - run: go vet ./...
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - run: docker compose up --build --detach
       - name: Wait for collector and proxy backend
         run: |
@@ -20,6 +27,7 @@ jobs:
           docker compose logs
           exit 1
       - run: python3 tests/integration.py
+      - run: python3 tests/native_integration.py
       - run: python3 tests/on_demand.py
       - run: npm ci
       - run: npx playwright install --with-deps chromium

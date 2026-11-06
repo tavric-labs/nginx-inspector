@@ -1,0 +1,83 @@
+name: Binary release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go test -race ./...
+      - run: go vet ./...
+  build:
+    needs: verify
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [linux/amd64, linux/arm64, darwin/amd64, darwin/arm64, windows/amd64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Build real executable and archive
+        env:
+          TARGET: ${{ matrix.target }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          export GOOS="${TARGET%/*}" GOARCH="${TARGET#*/}" CGO_ENABLED=0
+          VERSION="$REF_NAME"
+          if [[ "$GITHUB_REF_TYPE" != tag ]]; then VERSION="dev-${GITHUB_SHA:0:12}"; fi
+          NAME="nginx-inspector_${VERSION}_${GOOS}_${GOARCH}"
+          mkdir -p "dist/$NAME"
+          EXE=nginx-inspector
+          if [[ "$GOOS" == windows ]]; then EXE="$EXE.exe"; fi
+          go build -trimpath -ldflags "-s -w -X main.version=$VERSION -X main.commit=$GITHUB_SHA" -o "dist/$NAME/$EXE" ./cmd/nginx-inspector
+          cp README.md LICENSE "dist/$NAME/"
+          if [[ "$GOOS" == windows ]]; then
+            (cd "dist/$NAME" && zip -q "../$NAME.zip" ./*)
+          else
+            tar -czf "dist/$NAME.tar.gz" -C "dist/$NAME" .
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ strategy.job-index }}
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+          if-no-files-found: error
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: binary-*
+          path: dist
+          merge-multiple: true
+      - name: Package ABI-specific module source and checksums
+        run: |
+          tar -czf "dist/nginx-inspector_${GITHUB_REF_NAME}_module-source.tar.gz" module
+          (cd dist && sha256sum *.tar.gz *.zip > SHA256SUMS)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-assets
+          path: dist/
+      - name: Publish tagged release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --generate-notes --title "nginx-inspector $GITHUB_REF_NAME"

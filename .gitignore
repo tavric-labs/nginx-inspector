@@ -4,3 +4,7 @@ __pycache__/
 build/
 results/
 node_modules/
+docs/.vitepress/cache/
+docs/.vitepress/dist/
+dist/
+bin/nginx-inspector

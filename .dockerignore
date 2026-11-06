@@ -1,0 +1,8 @@
+.git
+node_modules
+docs/.vitepress
+build
+dist
+results
+**/__pycache__
+*.sqlite3*

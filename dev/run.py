@@ -3,8 +3,10 @@ import signal
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 processes = []
+Path('/data/static-example.txt').write_bytes(b'nginx file-backed response\n' * 8192)
 stopping = False
 
 
@@ -15,13 +17,12 @@ def stop(*_):
 
 for sig in (signal.SIGINT, signal.SIGTERM):
     signal.signal(sig, stop)
-for command in ([sys.executable, 'collector/inspector.py', 'serve', '--db', '/data/inspector.sqlite3', '--control-file', '/data/control'],
+for command in (['/app/nginx-inspector', 'serve', '--db', '/data/inspector.sqlite3', '--control-file', '/data/control'],
                 [sys.executable, 'dev/backend.py'],
                 ['/opt/nginx/sbin/nginx', '-c', '/app/dev/nginx.conf', '-g', 'daemon off;']):
     processes.append(subprocess.Popen(command))
     if len(processes) == 1:
         # The shared file must exist before nginx workers map it.
-        from pathlib import Path
         for _ in range(50):
             if Path('/data/control').exists():
                 break

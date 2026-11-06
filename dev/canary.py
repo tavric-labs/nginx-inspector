@@ -10,6 +10,7 @@ import time
 import urllib.request
 
 root = Path(sys.argv[1]).resolve()
+(root / 'static-example.txt').write_bytes(b'nginx file-backed response\n' * 8192)
 api_url = os.environ.get('INSPECTOR_URL', 'http://127.0.0.1:19877')
 http_port = int(api_url.rsplit(':', 1)[1])
 udp_port = int(os.environ.get('INSPECTOR_UDP_PORT', '19876'))
@@ -29,7 +30,7 @@ def start(command, name):
 
 
 def collector():
-    return start([sys.executable, str(root / 'inspector.py'), 'serve', '--db', str(root / 'events.sqlite3'),
+    return start([str(root / 'nginx-inspector'), 'serve', '--db', str(root / 'events.sqlite3'),
                   '--control-file', str(root / 'control'), '--udp-port', str(udp_port),
                   '--http-port', str(http_port)], 'collector')
 
@@ -56,6 +57,7 @@ try:
     start(['/usr/sbin/nginx', '-p', str(root) + '/', '-c', str(root / 'canary.conf'), '-g', 'daemon off;'], 'nginx')
     time.sleep(.5)
     subprocess.run([sys.executable, str(root / 'integration.py')], check=True)
+    subprocess.run([sys.executable, str(root / 'native_integration.py')], check=True)
     subprocess.run([sys.executable, str(root / 'on_demand.py')], check=True)
     receiver.terminate()
     receiver.wait(timeout=5)

@@ -1,4 +1,0 @@
-#!/bin/sh
-set -eu
-inspector_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-exec python3 "$inspector_root/collector/inspector.py" "$@"

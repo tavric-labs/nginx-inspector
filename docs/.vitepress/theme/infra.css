@@ -1,0 +1,18 @@
+:root {
+  --vp-font-family-base: 'IBM Plex Sans', 'Segoe UI', sans-serif;
+  --vp-font-family-mono: 'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace;
+  --vp-c-brand-1: #087f63;
+  --vp-c-brand-2: #096f58;
+  --vp-c-brand-3: #0a604d;
+  --vp-home-hero-name-color: var(--vp-c-text-1);
+  --vp-home-hero-name-background: none;
+}
+.dark { --vp-c-brand-1:#79d9b3; --vp-c-brand-2:#65c89f; --vp-c-brand-3:#3c9d79; }
+.VPDoc h1,.VPDoc h2,.VPNavBarTitle,.VPSidebarItem .text {font-family:var(--vp-font-family-mono)}
+.vp-doc h1 {letter-spacing:-1.2px;font-size:32px}
+.vp-doc h2 {font-size:21px;letter-spacing:-.5px}
+.vp-doc th {font-family:var(--vp-font-family-mono);font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+.vp-doc table {width:100%;font-size:13px}
+.vp-doc div[class*='language-'] {border:1px solid var(--vp-c-divider);border-radius:4px}
+.VPHomeHero .name,.VPHomeHero .text {font-family:var(--vp-font-family-mono);letter-spacing:-2px}
+.VPFeature {border-radius:4px!important}

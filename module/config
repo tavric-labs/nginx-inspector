@@ -2,4 +2,5 @@ ngx_addon_name=ngx_http_inspector_module
 ngx_module_type=HTTP
 ngx_module_name=ngx_http_inspector_module
 ngx_module_srcs="$ngx_addon_dir/ngx_http_inspector_module.c"
+ngx_module_deps="$ngx_addon_dir/inspector_native_json.h"
 . auto/module

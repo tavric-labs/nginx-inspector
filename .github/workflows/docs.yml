@@ -1,0 +1,88 @@
+name: Docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/docs.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/docs.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-production
+  cancel-in-progress: false
+
+env:
+  SITE_HOST: nginx-inspector.tavric-labs.net
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # "Last updated" dates come from git history
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Build docs (fails on dead links)
+        run: npm run docs:build
+      - name: Package site
+        run: tar -czf "$RUNNER_TEMP/docs-site.tgz" -C docs/.vitepress/dist .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: docs-site
+          path: ${{ runner.temp }}/docs-site.tgz
+          retention-days: 7
+
+  deploy:
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.DOCS_DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    environment: docs-production
+    env:
+      DEPLOY_HOST: ${{ vars.DOCS_DEPLOY_HOST }}
+      DEPLOY_USER: ${{ vars.DOCS_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ vars.DOCS_DEPLOY_PORT }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: docs-site
+      - name: Configure deployment identity
+        env:
+          DEPLOY_KEY: ${{ secrets.DOCS_DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DOCS_DEPLOY_KNOWN_HOSTS }}
+        run: |
+          test -n "$DEPLOY_HOST" && test -n "$DEPLOY_USER" && test -n "$DEPLOY_PORT"
+          test -n "$DEPLOY_KEY" && test -n "$DEPLOY_KNOWN_HOSTS"
+          install -d -m 700 "$HOME/.ssh"
+          umask 077
+          printf '%s\n' "$DEPLOY_KEY" > "$HOME/.ssh/docs-deploy"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+      - name: Publish release
+        run: |
+          ssh -i "$HOME/.ssh/docs-deploy" -p "$DEPLOY_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15 \
+            "$DEPLOY_USER@$DEPLOY_HOST" "publish $GITHUB_SHA" < docs-site.tgz
+      - name: Verify public HTTPS deployment
+        run: |
+          curl --fail --silent --show-error --retry 12 --retry-delay 5 --retry-all-errors --max-time 20 \
+            "https://$SITE_HOST/_deployment.json" |
+            python3 -c 'import json,os,sys; assert json.load(sys.stdin)["revision"] == os.environ["GITHUB_SHA"]'
+          curl --fail --silent --show-error "https://$SITE_HOST/" -o /dev/null
+      - name: Remove temporary credentials
+        if: always()
+        run: rm -f "$HOME/.ssh/docs-deploy"
