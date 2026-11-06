@@ -44,6 +44,9 @@
     .rp-att{display:grid;gap:5px;margin:8px 0}.rp-attbars{display:grid;gap:4px}.rp-attbar{display:grid;grid-template-columns:170px 1fr;gap:10px;align-items:center;font-size:12px;color:var(--muted)}.rp-attbar i{display:block;height:8px;border-radius:3px;background:#3d6f62}.rp-attbar i.h{background:#91b9ff}.rp-attbar i.r{background:#6cdbb3}.rp-attbar i.c{background:#f2ca80}
     .rp-log{margin:6px 0;padding-left:18px;font-size:12px;color:var(--text)}.rp-tbl{min-width:0;width:100%}.rp-tbl td{padding:6px 8px;border-bottom:1px solid var(--line);font-size:12px}.rp-tbl tr.on td{background:#16294a}
     .rp-phrow{display:flex;flex-wrap:wrap;gap:8px;margin:4px 0 6px}.rp-phase{display:grid;gap:1px;border:1px solid #36486a;border-radius:8px;padding:6px 10px;background:#101a30;min-width:130px;cursor:help}.rp-phase b{font:600 12px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--text)}.rp-phase span{font-size:11.5px;color:var(--muted)}.rp-phase.seen{border-color:#3d6f62;background:#123029}.rp-phase.seen span{color:#6cdbb3}.rp-phase.live{border-color:#6cdbb3;box-shadow:0 0 0 1px #6cdbb360}.rp-phase.off{border-style:dashed;background:transparent}.rp-phase.off b{color:#9aaac1}
+    .worker-insights{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-bottom:20px}.worker-insight{border:1px solid var(--line);border-radius:10px;padding:18px;background:#101a2b}.worker-insight h3{font-size:15px;margin:0 0 12px}.worker-insight .insight-value{font:600 21px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--text);margin:0 0 10px}.worker-insight p{color:var(--muted);font-size:13px;line-height:1.6;margin:8px 0}.worker-insight b{color:var(--text)}.worker-insight a{color:var(--blue);font-size:13px}.worker-disclosure{margin:16px 0;border:1px solid var(--line);border-radius:10px;padding:16px}.worker-disclosure>summary{font-size:15px;font-weight:600;cursor:pointer}.worker-disclosure>.detail-note{margin-bottom:16px}.worker-disclosure .native-section:last-child{margin-bottom:0}
+    .kernel-path{border:1px solid var(--line);border-radius:10px;padding:20px;margin:18px 0;background:#101a2b}.kernel-path h3{margin:0 0 10px}.kernel-path p{font-size:13px;line-height:1.6;color:var(--muted)}.kernel-steps{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;padding:0;list-style:none;margin:16px 0}.kernel-steps button{width:100%;height:100%;text-align:left;white-space:normal;padding:12px;border-radius:8px;border:1px solid var(--line);background:#111d32;color:var(--text);line-height:1.45}.kernel-steps button[aria-pressed=true]{border-color:var(--blue);outline:1px solid var(--blue)}.kernel-steps b,.kernel-steps small{display:block}.kernel-steps small{color:var(--muted);font-size:11px;margin-top:4px}.kernel-steps .earlier{border-style:dashed}.kernel-explanation{border-left:2px solid var(--blue);padding:0 16px;margin:18px 0}.kernel-facts{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}.kernel-facts span{border:1px solid var(--line);padding:5px 9px;border-radius:5px;font-size:12px}.kernel-controls{display:flex;gap:10px;align-items:center}.kernel-controls span{font-size:12px;color:var(--muted)}
+    .kernel-doc-link{display:inline-block;color:var(--blue);font-size:13px;line-height:1.5;margin-top:8px}
   </style>
 </head>
 <body>
@@ -124,20 +127,90 @@
     $('capture').classList.toggle('active',capture.active);$('capture-label').textContent=capture.active?'Capturing · '+numbers.format((capture.sample_permyriad??10000)/100)+'% sample'+(capture.remaining_seconds===null?'':' · '+count(capture.remaining_seconds)+'s remaining'):'Capture stopped';
   }
   let workerEpollOpen=false;
+  const workerSectionsOpen=new Map();
   function renderWorkers(v){
     $('worker-state').textContent=v.available?'OS samples every 2s · '+(v.scoped?'scoped to configured nginx master':'all visible nginx processes'):(v.error||'OS statistics unavailable');
     const samples=v.live_workers||[],last=[...samples].sort((a,b)=>b.at_ms-a.at_ms)[0],clients=last?.client_connections;
     const facts=[['Client connections',v.capture_active?text(clients?.active):'Capture OFF'],['Reading / writing / waiting',v.capture_active?[clients?.reading,clients?.writing,clients?.waiting].map(text).join(' / '):'—'],['Worker slots occupied',samples.length?samples.reduce((n,w)=>n+w.connection_slots_used,0):'—'],['Sampled requests in flight',samples.length?samples.reduce((n,w)=>n+w.sampled_inflight,0):'—']];
     const counters=$('worker-counters');counters.replaceChildren();for(const [label,value]of facts){const item=node('div','native-fact');item.append(node('strong','',value),node('span','',label));counters.append(item);}
     const body=$('worker-body');body.replaceChildren();const mib=n=>n===null||n===undefined?'Unavailable':numbers.format(n/1048576)+' MiB';
-    body.append(nativeTable('Processes · current read-only OS samples',['PID / role',{label:'CPU · one core',doc:'/workers#process-footprint'},{label:'RSS',doc:'/workers#process-footprint'},'Anonymous / file / shared','Threads / state',{label:'Slots used / capacity',doc:'/workers#three-different-concurrency-measures'},{label:'Sampled in flight',doc:'/workers#three-different-concurrency-measures'}],(v.processes||[]).map(p=>[p.pid+' / '+p.role,p.cpu_percent===null?'Warming / unavailable':numbers.format(p.cpu_percent)+'%',mib(p.rss_bytes),[p.anonymous_bytes,p.file_bytes,p.shared_bytes].map(mib).join(' / '),p.threads+' / '+p.state,p.traffic?p.traffic.connection_slots_used+' / '+p.traffic.connection_slots_capacity:'—',p.traffic?p.traffic.sampled_inflight:'—']),'RSS is an approximate resident-memory snapshot and can double-count shared pages across processes. It is separate from the request-pool estimates. CPU is a two-sample process delta, not per-request CPU.'));
-    renderWorkerAnatomy(body,v,mib);
+    body.append(workerInterpretation(v,mib));
+    const processTable=nativeTable('Processes · current read-only OS samples',['PID / role',{label:'CPU · one core',doc:'/workers#process-footprint'},{label:'RSS',doc:'/workers#process-footprint'},'Anonymous / file / shared','Threads / state',{label:'Slots used / capacity',doc:'/workers#three-different-concurrency-measures'},{label:'Sampled in flight',doc:'/workers#three-different-concurrency-measures'}],(v.processes||[]).map(p=>[p.pid+' / '+p.role,p.cpu_percent===null?'Warming / unavailable':numbers.format(p.cpu_percent)+'%',mib(p.rss_bytes),[p.anonymous_bytes,p.file_bytes,p.shared_bytes].map(mib).join(' / '),p.threads+' / '+p.state,p.traffic?p.traffic.connection_slots_used+' / '+p.traffic.connection_slots_capacity:'—',p.traffic?p.traffic.sampled_inflight:'—']),'RSS is an approximate resident-memory snapshot and can double-count shared pages across processes. It is separate from the request-pool estimates. CPU is a two-sample process delta, not per-request CPU.');processTable.id='worker-processes';body.append(processTable);
     const requests=samples.flatMap(w=>w.requests.map(r=>[w.worker_pid,r.method+' '+r.path,ms(r.elapsed_ms)+' ms',lifeCell(r.phase),r.status||'Not set',ioCell(r.io),r.response_bytes]));
-    body.append(nativeTable('In-flight requests · latest sampled worker snapshots',['Worker PID','Request',{label:'Elapsed',doc:'/workers#current-request-snapshots'},{label:'Where it is (last observed hook)',doc:'/workers#request-stages',tip:'The 7 request stages, why a stream stays at Body, and why it matters'},'Status',{label:'What nginx\'s sockets are doing now',doc:'/workers#socket-state',tip:'Client, upstream and bits: what they are and why we capture them'},{label:'Body bytes observed',doc:'/workers#current-request-snapshots'}],requests,v.capture_active?legendNote('At most 8 live requests per worker are shown. '+samples.reduce((n,w)=>n+w.omitted,0)+' live rows omitted. Snapshots expire after 4 seconds; short requests can finish between snapshots. An armed timer has not expired, and a stream can sit at one stage for a long time.'):'Capture is OFF. OS resource samples continue; request telemetry is cleared from this view.'));
+    const liveTable=nativeTable('In-flight requests · latest sampled worker snapshots',['Worker PID','Request',{label:'Elapsed',doc:'/workers#current-request-snapshots'},{label:'Where it is (last observed hook)',doc:'/workers#request-stages',tip:'The 7 request stages, why a stream stays at Body, and why it matters'},'Status',{label:'What nginx\'s sockets are doing now',doc:'/workers#socket-state',tip:'Client, upstream and bits: what they are and why we capture them'},{label:'Body bytes observed',doc:'/workers#current-request-snapshots'}],requests,v.capture_active?legendNote('At most 8 live requests per worker are shown. '+samples.reduce((n,w)=>n+w.omitted,0)+' live rows omitted. Snapshots expire after 4 seconds; short requests can finish between snapshots. An armed timer has not expired, and a stream can sit at one stage for a long time.'):'Capture is OFF. OS resource samples continue; request telemetry is cleared from this view.');liveTable.id='worker-live-requests';body.append(liveTable);
+    renderWorkerAnatomy(body,v,mib);
     $('worker-updated').textContent=v.sampled_ms?'OS sample '+new Date(v.sampled_ms).toLocaleTimeString():'';
   }
 
+  function workerInterpretation(v,mib){
+    const section=node('section','native-section');section.id='worker-interpretation';
+    section.append(node('h3','','What these readings help you understand'));
+    section.append(node('p','detail-note','Use this page to connect request behavior to worker CPU, connection capacity and memory. These observations describe the available samples; they do not establish a root cause on their own.'));
+    const grid=node('div','worker-insights');section.append(grid);
+    const workers=(v.processes||[]).filter(p=>p.role==='worker'||p.role==='draining worker');
+    const live=v.capture_active?(v.live_workers||[]):[];
+    const freshOS=Number.isFinite(v.sampled_ms)&&Date.now()-v.sampled_ms<=6000&&Date.now()-v.sampled_ms>=-1000;
+    const freshLive=live.filter(w=>Number.isFinite(w.at_ms)&&Date.now()-w.at_ms<=4000&&Date.now()-w.at_ms>=-1000);
+    const known=n=>typeof n==='number'&&Number.isFinite(n)&&n>=0;
+    function add(title,value,evidence,meaning,next,target){
+      const card=node('article','worker-insight');card.append(node('h3','',title),node('p','insight-value',value));
+      for(const [label,content] of [['Observed',evidence],['Why it matters',meaning],['Next step',next]]){
+        const p=node('p','');p.append(node('b','',label+': '),document.createTextNode(content));card.append(p);
+      }
+      const a=node('a','','See the evidence ↓');a.href='#'+target;
+      a.addEventListener('click',e=>{const el=$(target);if(el){e.preventDefault();if(el.tagName==='DETAILS'){el.open=true;workerSectionsOpen.set(target,true);}el.scrollIntoView({behavior:'smooth',block:'start'});}});card.append(a);grid.append(card);
+    }
+    const slots=freshLive.filter(w=>known(w.connection_slots_used)&&w.connection_slots_capacity>0).sort((a,b)=>b.connection_slots_used/b.connection_slots_capacity-a.connection_slots_used/a.connection_slots_capacity);
+    const busiestSlot=slots[0];
+    add('How much connection capacity remains?',busiestSlot?numbers.format(busiestSlot.connection_slots_used/busiestSlot.connection_slots_capacity*100)+'% · fullest sampled worker':'Live capacity unknown',
+      busiestSlot?'Worker '+busiestSlot.worker_pid+' has '+count(busiestSlot.connection_slots_used)+' of '+count(busiestSlot.connection_slots_capacity)+' slots occupied; '+count(busiestSlot.connection_slots_capacity-busiestSlot.connection_slots_used)+' free. '+slots.length+' worker snapshots available'+(v.scoped&&freshOS?' / '+workers.length+' workers visible.':'.'):
+        'No fresh connection-slot snapshot is available'+(v.capture_active?'.':' because capture is stopped.'),
+      'Each worker has its own limit. Client, upstream and internal connections all consume slots; available slots are not a count of additional HTTP requests.',
+      'Look for one worker filling while others have room. Follow growth across samples before changing worker_connections.','worker-processes');
+    const cpu=freshOS?workers.filter(p=>known(p.cpu_percent)).sort((a,b)=>b.cpu_percent-a.cpu_percent):[];
+    const busiestCPU=cpu[0],wait=cpu.map(p=>p.scheduling?.runqueue_ms_per_second).filter(known);
+    add('Are workers doing CPU work?',busiestCPU?numbers.format(busiestCPU.cpu_percent)+'% of one core · busiest worker':'Current CPU unknown',
+      busiestCPU?'Worker '+busiestCPU.pid+' in the last two-second OS interval. '+cpu.length+' worker'+(cpu.length===1?' has':'s have')+' measured CPU deltas.'+(wait.length?' Largest measured main-thread run-queue wait: '+numbers.format(Math.max(...wait))+' ms per second.':''):
+        'CPU needs two fresh OS samples; missing or old values cannot describe current load.',
+      'An open stream can spend most of its lifetime waiting on sockets. Elapsed request time and CPU work measure different things.',
+      'Compare sustained CPU and runnable queue delay with request latency. User/system CPU details help separate application work from kernel work.','worker-cpu-evidence');
+    const requests=freshLive.flatMap(w=>w.requests||[]),omitted=freshLive.reduce((n,w)=>n+(w.omitted||0),0);
+    const upstream=requests.filter(r=>(r.io&512)&&!(r.io&128)).length;
+    const output=requests.filter(r=>r.io&(4|8192)).length;
+    const timeout=requests.filter(r=>r.io&(32768|65536|131072|262144)).length;
+    add('Where should I look for a slow request?',freshLive.length?count(requests.length)+' selected requests visible':'Current request state unknown',
+      freshLive.length?upstream+' rows have an upstream read timer armed without read-ready; '+output+' show delayed or blocked output; '+timeout+' have timeout flags. '+omitted+' selected rows omitted. Counts can overlap.':
+        'No fresh request snapshot is available. Process statistics can still be read independently.',
+      'A read timer without read-ready is consistent with waiting for backend data. Delayed output can reflect a rate limit or downstream backpressure. Neither alone establishes the cause of latency.',
+      timeout?'Open the affected request and check which side timed out.':output?'Check output delay flags, bandwidth limits and downstream throughput.':requests.length?'Read the last HTTP hook together with socket flags. A long-lived response body may be an ordinary stream.':'Short or unselected requests can be absent between snapshots. Zero displayed rows does not prove nginx is idle.','worker-live-requests');
+    const rss=freshOS?workers.map(p=>p.rss_bytes).filter(known):[];
+    const d=v.diagnostics,matching=d?.processes.filter(p=>workers.some(w=>w.pid===p.pid&&w.start_ticks===p.start_ticks))||[];
+    const pss=matching.map(p=>p.pss_bytes).filter(known);
+    add('What memory is nginx actually using?',rss.length?mib(Math.min(...rss))+'–'+mib(Math.max(...rss))+' RSS per worker':'Current resident memory unknown',
+      rss.length?'Current OS resident-memory range.'+(pss.length?' A separate snapshot from '+new Date(d.ended_ms).toISOString()+' measured '+mib(Math.min(...pss))+'–'+mib(Math.max(...pss))+' PSS for matching worker identities.':' No PSS measurement for the current worker identities is available.'):
+        'No fresh readable worker RSS sample is available.',
+      'RSS includes shared pages in every process. PSS apportions them. Request-pool estimates describe a different allocation scope, so these numbers should not be added.',
+      'Compare memory over time at similar traffic and concurrency. A single RSS reading cannot establish a leak or a per-request memory cost.','worker-history-evidence');
+    return section;
+  }
+
   function renderWorkerAnatomy(body,v,mib){
+    const raw=node('div','');buildWorkerEvidence(raw,v,mib);
+    const groups=[
+      ['worker-learning','How nginx serves requests · roles, event loop and request cost','Use this explanation to understand why many concurrent connections can coexist with low CPU.',new Set(['Master, workers & connection slots','The worker event loop · mechanism, not an animated trace','What does one request cost?'])],
+      ['worker-cpu-evidence','CPU and memory details · live OS evidence','Use these counters to investigate sustained CPU use or memory growth. Scheduler slices and context switches do not count epoll wakeups.',new Set(['CPU & scheduler · live process deltas','Memory & faults · live OS snapshots'])],
+      ['worker-history-evidence','Past deep inspection · sockets, epoll, PSS and CPU samples','Historical evidence explains how nginx was operating during a recorded interval. It cannot establish current load or the cause of a present slowdown.',null]
+    ];
+    for(const [id,label,note,titles] of groups){
+      const disclosure=node('details','worker-disclosure');disclosure.id=id;disclosure.open=workerSectionsOpen.get(id)||false;
+      disclosure.addEventListener('toggle',()=>{if(disclosure.isConnected)workerSectionsOpen.set(id,disclosure.open);});
+      disclosure.append(node('summary','',label),node('p','detail-note',note));
+      for(const child of [...raw.children]){const title=child.querySelector('h3')?.textContent;if(titles===null||titles.has(title))disclosure.append(child);}
+      body.append(disclosure);
+    }
+  }
+
+  function buildWorkerEvidence(body,v,mib){
     const rate=(n,suffix=' /s')=>n===null||n===undefined?'Unavailable / warming':numbers.format(n)+suffix;
     const pct=n=>rate(n,'%');
     const processes=v.processes||[];
@@ -471,7 +544,8 @@
     const svgWrap=node('div','rp-svgwrap');svgWrap.innerHTML='<svg id="rp-svg" viewBox="0 0 980 300" role="img" aria-label="The seven nginx stages a request passes through" xmlns="http://www.w3.org/2000/svg"><defs><marker id="rpa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#5b6b86"/></marker><marker id="rph" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#6cdbb3"/></marker></defs></svg>';
     const time=node('div','rp-time');time.id='rp-time';
     const cap=node('div','rp-cap');cap.id='rp-cap';const extra=node('div','rp-extra');extra.id='rp-extra';
-    main.append(head,ctl,svgWrap,time,cap,extra);
+    const kernel=node('section','kernel-path');kernel.id='rp-kernel-path';kernel.setAttribute('aria-label','Kernel to nginx worker');
+    main.append(head,ctl,svgWrap,time,cap,kernel,extra);
     const svg=$('rp-svg'),NS='http://www.w3.org/2000/svg';
     const mk=(tag,attrs,txt)=>{const el=document.createElementNS(NS,tag);for(const k in attrs)el.setAttribute(k,attrs[k]);if(txt!==undefined)el.textContent=txt;svg.append(el);return el;};
     mk('rect',{x:112,y:14,width:868,height:176,rx:8,class:'rp-nginx'});mk('text',{x:970,y:32,class:'rp-lab','text-anchor':'end'},'nginx worker');
@@ -496,24 +570,93 @@
     });
     const pk=document.createElementNS(NS,'g');pk.setAttribute('id','rp-pk');pk.setAttribute('class','rp-pk');const c=document.createElementNS(NS,'circle');c.setAttribute('r',9);pk.append(c);svg.append(pk);
   }
+  const KERNEL={id:null,step:0};
+  const KERNEL_STEPS=[
+    ['Network receive','NIC / vNIC or loopback','Packets enter through an interface or loopback. The receive path and IP/TCP processing deliver an ordered byte stream to a socket. The particular interface, CPU, packet-processing time and packet arrival timestamps were not captured.',
+      'Use this boundary to distinguish work before nginx sees HTTP from the HTTP stages below. Network processing and application execution can occur on different CPUs.'],
+    ['SYN queue','Incomplete TCP handshakes','For a new TCP connection, Linux tracks the handshake while it is incomplete. This is connection setup, not a queue of HTTP requests. SYN cookies can change how incomplete handshakes are tracked.',
+      'Handshake delay happens before HTTP parsing. A reused connection does not create a new SYN entry for every request.'],
+    ['Accept queue','Established, not accepted yet','A completed TCP connection can wait on the listener for accept(). Listener backlog limits this queue separately from the incomplete-handshake queue; deferred accept and TCP Fast Open can change the simplified sequence.',
+      'A large accept backlog can delay connection admission. This request record has no accept-queue residence time or queue-depth sample.'],
+    ['Listener becomes ready','epoll interest → ready list','nginx registers interest in its listener. When a connection can be accepted, Linux can report listener readiness through epoll. The interest list is the subscription; the ready list holds references to descriptors ready for I/O.',
+      'Readiness is a notification, not a copied HTTP request. EXCLUSIVE, an accept mutex or reuseport can affect which worker handles acceptance; this record does not trace the selection decision.'],
+    ['Worker accepts a socket','accept4 → connected FD','An accepting worker obtains a connected file descriptor, separate from the listener. nginx associates event handlers with the connection and arranges readiness monitoring for further nonblocking I/O.',
+      'The captured worker PID identifies the worker handling this request. It does not give the timestamp at which that worker accepted the connection.'],
+    ['Receive buffer becomes readable','Socket bytes → epoll readiness','TCP data can accumulate in the connected socket receive queue. epoll can report that socket as readable. Data may already be ready when the worker registers it; notification does not imply one packet or one HTTP request.',
+      'A worker can be runnable but waiting for CPU after readiness. Scheduler run-queue delay is a different measurement from socket-buffer wait.'],
+    ['Worker reads and parses','Nonblocking I/O · TLS when used','The event loop dispatches a connection handler. Reads consume available bytes or return EAGAIN when more data must be awaited. For HTTPS, TLS handling and HTTP parsing lead toward an HTTP request; buffered data may allow progress without a new read syscall.',
+      'A single connection can carry repeated HTTP/1 requests or multiplexed HTTP/2 streams. Each request does not require a fresh handshake, accept or epoll wakeup.'],
+    ['HTTP hooks take over','POST_READ → existing seven stages','After request headers are parsed, nginx can run POST_READ and the remaining HTTP lifecycle. This is where the existing phase observations can begin; an internal request or a capture started mid-request may have a different first observed hook.',
+      'The seven stages above describe HTTP processing. Their time origin is nginx request start, not NIC arrival or the start of a TCP handshake.']
+  ];
+  function paintKernelPath(m){
+    const host=$('rp-kernel-path');if(!host)return;
+    const e=m.kind==='completed'?m.e:null,r=m.kind==='inflight'?m.r:null;
+    if(KERNEL.id!==R.id){KERNEL.id=R.id;KERNEL.step=0;}
+    const g=e?.native?.nginx||{},c=e?.native?.connection||{},worker=g.worker_pid||r?.worker;
+    const post=e?.native?.trace?.find(t=>!t.subrequest&&t.event==='post_read');
+    const postAt=typeof post?.at_ms==='number'?post.at_ms:(typeof e?.phases_ms?.post_read==='number'?e.phases_ms.post_read:null);
+    const protocol=c.protocol||'',http2=/^HTTP\/2(?:\b|\.)/i.test(protocol),unsupported=/^HTTP\/3(?:\b|\.)|QUIC/i.test(protocol)||(g.event_backend&&g.event_backend!=='epoll');
+    const reused=typeof c.request_number==='number'&&c.request_number>1;
+    const key=JSON.stringify([R.id,m.kind,KERNEL.step,worker,c,postAt,g.event_backend,g.accept_mutex,g.configured_workers,e?.duration_ms,r?.io]);
+    if(host.dataset.model===key)return;host.dataset.model=key;host.replaceChildren();
+    host.append(node('h3','','Kernel → socket → nginx worker'));
+    host.append(node('p','','Walk through the transport mechanism separately from the recorded HTTP stages. Kernel steps are an explanation of the Linux TCP/epoll model, not a captured packet replay. Per-request kernel and queue timings are not measured.'));
+    const facts=node('div','kernel-facts');
+    for(const text of ['Worker: '+(worker||'not captured'),'Connection: '+(c.id??'not captured'),'Protocol: '+(protocol||'not captured'),'Request on connection: '+(c.request_number??'not captured'),'Event backend: '+(g.event_backend||'not captured'),'Accept mutex: '+(typeof g.accept_mutex==='boolean'?(g.accept_mutex?'on':'off'):'not captured')])facts.append(node('span','mono',text));host.append(facts);
+    if(unsupported)host.append(node('p','rp-warn','Applicability: this record reports '+(protocol||g.event_backend)+'. The TCP/epoll walkthrough is explanatory only and must not be treated as its observed transport path.'));
+    host.append(node('p','',reused?'Connection reuse observed: nginx reports request #'+c.request_number+'. SYN, accept and worker assignment belong to earlier connection setup; this request does not repeat that setup.':
+      c.request_number===1?'nginx reports the first request on this connection. Its TCP setup was not traced; the model does not prove which queue steps were observed.':
+      'Connection setup applicability is unknown: no request sequence number was captured. Do not infer a fresh handshake from this HTTP event.'));
+    if(http2)host.append(node('p','','HTTP/2: socket readiness is connection-level, while HTTP frames identify streams. One readiness return may advance several streams; this request cannot be matched to a unique epoll return from these observations.'));
+    const list=node('ol','kernel-steps');
+    KERNEL_STEPS.forEach(([title,owner],i)=>{
+      const li=node('li',''),earlier=reused&&i>=1&&i<=4;
+      const b=node('button',earlier?'earlier':'');b.type='button';b.setAttribute('aria-pressed',String(i===KERNEL.step));
+      b.append(node('b','',(i+1)+' · '+title),node('small','',owner),node('small','',earlier?'Earlier connection setup':i===7&&postAt!==null?'POST_READ observed · +'+ms(postAt)+' ms':'Mechanism · time not measured'));
+      b.onclick=()=>{KERNEL.step=i;paintKernelPath(m);};li.append(b);list.append(li);
+    });host.append(list);
+    const selected=KERNEL_STEPS[KERNEL.step],explain=node('div','kernel-explanation');
+    explain.append(node('h4','',(KERNEL.step+1)+' · '+selected[0]),node('p','',selected[2]),node('p','',selected[3]));
+    if(reused&&KERNEL.step>=1&&KERNEL.step<=4)explain.append(node('p','','For this request: connection setup happened earlier. Its duration is unknown, rather than zero.'));
+    host.append(explain);
+    const controls=node('div','kernel-controls');
+    const back=ctlBtn('Previous transport step',()=>{KERNEL.step--;paintKernelPath(m);});back.disabled=KERNEL.step===0;
+    const next=ctlBtn('Next transport step',()=>{KERNEL.step++;paintKernelPath(m);});next.disabled=KERNEL.step===KERNEL_STEPS.length-1;
+    controls.append(back,node('span','','Explanation step '+(KERNEL.step+1)+' of '+KERNEL_STEPS.length+' · independent of HTTP playback'),next);host.append(controls);
+    host.append(nativeTable('Time accounting · what was actually measured',['Interval','For this request'],[
+      ['Kernel network-stack CPU time','Not measured'],
+      ['SYN handshake / queue residence',reused?'Earlier connection setup · duration unknown':'Not measured'],
+      ['Accept-queue residence',reused?'Earlier connection setup · duration unknown':'Not measured'],
+      ['Socket ready → worker scheduled','Not measured'],
+      ['Socket reads / TLS / parsing breakdown','Not measured'],
+      ['POST_READ hook offset',postAt!==null?'Observed +'+ms(postAt)+' ms from nginx request start':'Not captured'],
+      ['nginx HTTP request duration',e?ms(e.duration_ms)+' ms · observed HTTP elapsed time':'Still in flight · no final duration']
+    ],'Unknown is not zero. Aggregate worker epoll histograms and CPU samples are not linked to this request and cannot fill these gaps. Measuring them requires a separate, correlated kernel trace with defined connection/stream boundaries.'));
+    host.append(node('p','','Queue guide: SYN queue = incomplete handshakes; accept queue = established connections waiting for accept; socket receive queue = buffered bytes; epoll ready list = ready descriptor references; CPU run queue = runnable threads. These are different queues, not one request pipeline.'));
+    const docs=node('a','kernel-doc-link','Read the kernel-to-worker guide');docs.href=DOCS+'/kernel-to-worker';docs.target='_blank';docs.rel='noopener noreferrer';host.append(docs);
+  }
+
   function ctlBtn(label,fn,cls,aria){const b=node('button',cls||'',label);b.type='button';b.onclick=fn;if(aria)b.setAttribute('aria-label',aria);return b;}
   function paintReplay(){
     if(!R.kind)return;
     const m=currentModel(),head=$('rp-head'),ctl=$('rp-ctl'),cap=$('rp-cap'),extra=$('rp-extra'),time=$('rp-time');if(!head)return;
     if(!m){head.replaceChildren(node('p','rp-hint','This request is no longer available.'));return;}
     if(m.kind==='gone'){
+      $('rp-kernel-path')?.replaceChildren(node('p','','This request left the live sampled set; choose a completed request to inspect its transport context.'));
       head.replaceChildren(node('h3','','This request is no longer in flight'));ctl.replaceChildren();cap.replaceChildren();extra.replaceChildren();time.replaceChildren();
       const p=node('p','rp-hint',m.done?'It finished. Its full replay is now available under Completed.':'It finished or left the sampled set. Completed requests are listed under Completed.');cap.append(p);
       if(m.done){const b=ctlBtn('Open the full replay',()=>openReplay('completed',R.id),'primary');cap.append(b);}return;
     }
     const e=m.kind==='completed'?m.e:null,r=m.kind==='inflight'?m.r:null;
     const cur=stageAt(m);
+    paintKernelPath(m);
     /* head */
     head.replaceChildren();
     const title=node('div','rp-title');
     if(e)title.append(node('span','method',e.method),node('span','mono rp-ttl',e.path),node('span','status '+statusClass(e.status),e.status),node('span','mono muted',ms(e.duration_ms)+' ms in total'));
     else title.append(node('span','method',r.method),node('span','mono rp-ttl',r.path),node('span','status '+(r.status?statusClass(r.status):''),r.status||'status not set'),node('span','mono muted rp-live','live · about '+ms(r.elapsed_ms+(Date.now()-r.seenAt))+' ms elapsed'));
-    head.append(title);
+    const kernelLink=node('a','kernel-doc-link','Kernel → worker path ↓');kernelLink.href='#rp-kernel-path';head.append(title,kernelLink);
     /* controls */
     ctl.replaceChildren();
     if(m.kind==='completed'){

@@ -34,5 +34,6 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: npm run test:viewer
       - run: npm run test:workers
+      - run: npm run test:replay
       - if: always()
         run: docker compose logs && docker compose down

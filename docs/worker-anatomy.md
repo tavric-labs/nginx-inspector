@@ -4,6 +4,13 @@ The Workers view separates **live process samples**, **native request observatio
 and **dated operator diagnostics**. Each answers a different question. A dated
 snapshot never supplies a missing live counter.
 
+## Start with the question
+
+The overview connects evidence to connection headroom, CPU work, request state
+and memory interpretation. It reports sample coverage and missing data without
+claiming a bottleneck or leak from one observation. Open the detailed evidence
+when investigating a specific question.
+
 ## Master and workers
 
 The master manages configuration and worker generations; workers process request

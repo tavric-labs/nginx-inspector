@@ -4,6 +4,7 @@
   "scripts": {
     "test:viewer": "node tests/viewer.cjs",
     "test:workers": "node tests/workers.cjs",
+    "test:replay": "node tests/replay-kernel.cjs",
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
     "docs:preview": "vitepress preview docs"

@@ -52,3 +52,18 @@ stages, which pass in about a millisecond; when the request finishes, open it un
 **Completed** for the full replay.
 
 A request that began before capture started has no recorded stages and says so.
+
+## Understand the worker readings
+
+Workers starts with four questions: connection capacity, CPU work, request-delay
+investigation and memory interpretation. Each answer gives its evidence, purpose
+and suggested next check. Stale or missing data stays unknown; a single reading
+does not establish a bottleneck or leak. Detailed counters and historical evidence
+are expandable, and their open state survives refreshes.
+
+### Kernel and socket context in Replay
+
+The [kernel-to-worker walkthrough](./kernel-to-worker.md) is separate from the
+seven HTTP stages. It explains TCP queues, socket subscriptions, epoll readiness
+and worker dispatch, with connection-reuse and HTTP/2 context. Captured facts and
+HTTP times stay separate from transport steps whose timings were not measured.
