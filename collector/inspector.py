@@ -207,29 +207,7 @@ class Store:
                     errors=sum(r[2] >= 500 for r in rows))
 
 
-PAGE = '''<!doctype html><meta charset="utf-8"><title>nginx inspector</title>
-<meta name="viewport" content="width=device-width"><style>
-body{font:16px system-ui;margin:2em auto;max-width:1100px;padding:0 1em;background:#101820;color:#e9f0f5}
-button{cursor:pointer}td,th{text-align:left;padding:.6em;border-bottom:1px solid #53616c}
-pre{white-space:pre-wrap;overflow-wrap:anywhere}table{width:100%}button{padding:.4em}
-</style><h1>nginx inspector</h1><p id="capture"></p><p>Refreshes every 2 seconds. Bodies and query strings are excluded.</p>
-<pre id="summary"></pre><table><thead><tr><th>Time</th><th>Method / path</th><th>Status</th><th>ms</th><th>Inspect</th></tr></thead>
-<tbody id="rows"></tbody></table><h2>Request detail</h2><pre id="detail">Select a request.</pre>
-<script>
-async function refresh(){try{
-const [s,events,capture]=await Promise.all([fetch('/api/summary').then(r=>r.json()),fetch('/api/events').then(r=>r.json()),fetch('/api/capture').then(r=>r.json())]);
-document.getElementById('capture').textContent=capture.active?'Capture running'+(capture.remaining_seconds===null?' until stopped':' — '+capture.remaining_seconds+' seconds remaining'):'Capture stopped. Saved history is still available.';
-document.getElementById('summary').textContent=JSON.stringify(s,null,2);
-const rows=document.getElementById('rows');rows.replaceChildren();
-for(const e of events){const tr=document.createElement('tr');
-for(const v of [new Date(e.started_ms).toISOString(),e.method+' '+e.path,e.status,e.duration_ms]){
-const td=document.createElement('td');td.textContent=v;tr.append(td);}
-const td=document.createElement('td'),b=document.createElement('button');b.textContent='Open';
-b.onclick=async()=>{const v=await fetch('/api/events/'+encodeURIComponent(e.id)).then(r=>r.json());
-document.getElementById('detail').textContent=JSON.stringify(v,null,2);};td.append(b);tr.append(td);rows.append(tr);}
-}catch(e){document.getElementById('summary').textContent='Collector unavailable';}}
-refresh();setInterval(refresh,2000);
-</script>'''
+PAGE = Path(__file__).with_name('viewer.html').read_text(encoding='utf-8')
 
 
 class Collector:

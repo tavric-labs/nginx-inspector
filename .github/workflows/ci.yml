@@ -21,5 +21,8 @@ jobs:
           exit 1
       - run: python3 tests/integration.py
       - run: python3 tests/on_demand.py
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:viewer
       - if: always()
         run: docker compose logs && docker compose down

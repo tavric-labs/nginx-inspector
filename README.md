@@ -63,6 +63,8 @@ Stop that specific container with `docker stop nginx-inspector-dev`.
 
 Python 3.10+; no pip dependencies:
 
+Deploy the whole `collector/` directory, including its `viewer.html` asset.
+
 ```sh
 python3 collector/inspector.py serve --db /path/to/private-data/events.sqlite3 \
   --retention-hours 24 --max-events 100000 \
@@ -173,3 +175,15 @@ alternating order, warm up first, and compare at least three pairs. The target i
 less than 5% throughput loss and less than 1 ms additional p95 latency. A shared
 VM result is an experiment, not a production performance guarantee. Compare
 collector row growth against generated request count and account for any losses.
+
+The browser regression check uses Playwright as a development dependency:
+
+```sh
+npm ci
+npx playwright install chromium
+npm run test:viewer
+```
+
+Run it after the demo integration tests have recorded requests. It verifies
+search/filtering, refresh controls, a visible request-detail dialog, JSON download,
+missing-request errors and the mobile layout. Node is not needed by the collector.
