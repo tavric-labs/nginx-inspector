@@ -8,11 +8,13 @@ The native module runs inside nginx; the Go collector is a separate process.
 On **2026-11-06, 18:45:53–18:46:53 UTC**, a read-only observation sampled the
 collector container 12 times, five seconds apart. Capture stayed at **100%** with
 four native workers reporting. The collector received **76 completed request event
-datagrams** during the minute, approximately 1.3 per second. No load was generated
+datagrams** during the minute: **76 ÷ 60 ≈ 1.27 completed-request events/second**. No load was generated
 for this measurement.
 
 | Collector measure | Observed value |
 | --- | ---: |
+| Completed-request event rate received | **76 events / 60 seconds ≈ 1.27 events/s** |
+| Capture sampling | **100%** |
 | CPU, mean of sampled readings | **1.59% of one CPU core** |
 | CPU, highest sampled reading | **3.18% of one CPU core** |
 | Container memory, sampled range | **11.53–14.62 MiB** |
@@ -20,6 +22,11 @@ for this measurement.
 | Container tasks, observed maximum | **8** |
 | Configured CPU ceiling | **0.5 CPU core** |
 | Configured memory ceiling | **192 MiB** |
+
+The 1.27 events/s rate counts received completed-request datagrams, not every
+nginx internal operation or all collector traffic. Worker snapshots are additional:
+four reporting workers are configured to send one snapshot each per second. Those
+snapshots and dashboard polling also contribute to collector usage.
 
 CPU and container memory come from Docker stats. Container memory is not the Go
 heap size or a per-request allocation. These light-traffic readings do not predict

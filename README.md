@@ -45,7 +45,8 @@ explains what each observation can establish.
 
 ## Observed resource use
 
-At 100% capture and about 1.3 completed events/s, a 60-second real-traffic sample recorded:
+**Measurement load: 76 completed-request events received in 60 seconds
+(≈1.27 events/second), at 100% capture.** Under that load:
 
 | Component | Memory | CPU |
 | --- | --- | --- |
