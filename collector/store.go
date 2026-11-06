@@ -29,6 +29,10 @@ func NewStore(path string, hours, max int) (*Store, error) {
 			return nil, e
 		}
 	}
+	if e := s.initTransport(); e != nil {
+		db.Close()
+		return nil, e
+	}
 	return s, nil
 }
 func (s *Store) Close() error { return s.db.Close() }

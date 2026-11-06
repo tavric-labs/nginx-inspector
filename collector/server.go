@@ -18,27 +18,31 @@ import (
 //go:embed viewer.html
 var page []byte
 
+//go:embed journey.html
+var journeyPage []byte
+
 type Config struct {
 	DB, ControlFile, ViewerHost, ProcRoot, NginxPIDFile string
 	UDPPort, HTTPPort, RetentionHours, MaxEvents        int
 	WorkerDiagnosticsFile                               string
 }
 type Server struct {
-	Store       *Store
-	Control     *Control
-	udp         *net.UDPConn
-	listeners   []net.Listener
-	servers     []*http.Server
-	pending     chan Event
-	mu          sync.Mutex
-	stats       map[string]uint64
-	failure     bool
-	workers     *workerMonitor
-	diagnostics *WorkerDiagnostics
+	Store            *Store
+	Control          *Control
+	udp              *net.UDPConn
+	listeners        []net.Listener
+	servers          []*http.Server
+	pending          chan Event
+	mu               sync.Mutex
+	stats            map[string]uint64
+	failure          bool
+	workers          *workerMonitor
+	transportPending chan TransportRecord
+	diagnostics      *WorkerDiagnostics
 }
 
 func NewServer(c Config) (s *Server, err error) {
-	s = &Server{workers: newWorkerMonitor(c.ProcRoot, c.NginxPIDFile), pending: make(chan Event, 2000), stats: map[string]uint64{}}
+	s = &Server{transportPending: make(chan TransportRecord, 2000), workers: newWorkerMonitor(c.ProcRoot, c.NginxPIDFile), pending: make(chan Event, 2000), stats: map[string]uint64{}}
 	defer func(server *Server) {
 		if err != nil {
 			server.closeResources()
@@ -187,6 +191,10 @@ func (s *Server) handler(readonly bool, port int) http.Handler {
 		var v any
 		var err error
 		switch r.URL.Path {
+		case "/journey":
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.Write(journeyPage)
+			return
 		case "/":
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.Write(page)
@@ -211,14 +219,22 @@ func (s *Server) handler(readonly bool, port int) http.Handler {
 				status = "error"
 				code = 503
 			}
-			reply(map[string]any{"status": status, "stats": stats, "capture": s.Control.Status(), "queue": len(s.pending)}, code)
+			reply(map[string]any{"status": status, "stats": stats, "capture": s.Control.Status(), "queue": len(s.pending), "transport_queue": len(s.transportPending)}, code)
 			return
 		case "/api/events":
 			v, err = s.Store.Recent()
 		case "/api/summary":
 			v, err = s.Store.Summary()
 		default:
-			if strings.HasPrefix(r.URL.Path, "/api/events/") {
+			if strings.HasPrefix(r.URL.Path, "/api/transport/") {
+				id := strings.TrimPrefix(r.URL.Path, "/api/transport/")
+				if !idPattern.MatchString(id) {
+					fail("invalid request ID", 400)
+					return
+				}
+				// The request marker itself can precede the HTTP completion.
+				v, err = s.Store.Transport(id)
+			} else if strings.HasPrefix(r.URL.Path, "/api/events/") {
 				v, err = s.Store.Get(strings.TrimPrefix(r.URL.Path, "/api/events/"))
 				if err == sql.ErrNoRows {
 					fail("not found", 404)
@@ -238,6 +254,7 @@ func (s *Server) handler(readonly bool, port int) http.Handler {
 }
 func (s *Server) receive(ctx context.Context) {
 	defer close(s.pending)
+	defer close(s.transportPending)
 	buf := make([]byte, MaxEventBytes+1)
 	for {
 		n, _, err := s.udp.ReadFromUDP(buf)
@@ -251,7 +268,23 @@ func (s *Server) receive(ctx context.Context) {
 		var envelope struct {
 			Kind string `json:"kind"`
 		}
-		if json.Unmarshal(buf[:n], &envelope) == nil && envelope.Kind == "worker" {
+		if json.Unmarshal(buf[:n], &envelope) == nil && envelope.Kind == "transport" {
+			t, e := ValidateTransport(buf[:n])
+			if e != nil {
+				s.inc("transport_invalid", 1)
+			} else if !s.workers.matchesMaster(t.Master) {
+				s.inc("transport_scope_dropped", 1)
+			} else {
+				select {
+				case s.transportPending <- t:
+					s.inc("transport_received", 1)
+				default:
+					s.inc("transport_queue_dropped", 1)
+				}
+			}
+			continue
+		}
+		if envelope.Kind == "worker" {
 			worker, err := ValidateWorker(buf[:n])
 			if err != nil {
 				s.inc("invalid_worker", 1)
@@ -317,10 +350,11 @@ func (s *Server) Run(ctx context.Context) error {
 	defer cancel()
 	defer s.closeResources()
 	var wg sync.WaitGroup
-	wg.Add(3)
+	wg.Add(4)
 	go func() { defer wg.Done(); s.workers.run(ctx) }()
 	go func() { defer wg.Done(); s.receive(ctx) }()
 	go func() { defer wg.Done(); s.persist() }()
+	go func() { defer wg.Done(); s.persistTransport() }()
 	errs := make(chan error, len(s.servers))
 	for i, h := range s.servers {
 		go func(h *http.Server, l net.Listener) {

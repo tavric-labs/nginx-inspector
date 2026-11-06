@@ -110,6 +110,27 @@ ngx_module_t NGINX_INSPECTOR_MODULE = {
     NULL, NULL, inspector_worker, NULL, NULL, inspector_exit, NULL, NGX_MODULE_V1_PADDING
 };
 
+/* Stable metadata-only uprobe ABI. No payload reads, syscalls or allocation.
+ * These no-op calls are made only for selected main requests. Attaching a
+ * tracer is optional and adds probe overhead; symbols must not be stripped. */
+#if defined(__GNUC__)
+#define INSPECTOR_PROBE __attribute__((noinline, visibility("default")))
+#else
+#define INSPECTOR_PROBE
+#endif
+INSPECTOR_PROBE void ngx_inspector_request_begin(uint64_t worker, uint64_t serial,
+    uint64_t connection, uint64_t started_ms, uint64_t fd, uint64_t request_number)
+{
+    __asm__ __volatile__("" : : "r"(worker), "r"(serial), "r"(connection),
+        "r"(started_ms), "r"(fd), "r"(request_number) : "memory");
+}
+INSPECTOR_PROBE void ngx_inspector_request_end(uint64_t worker, uint64_t serial,
+    uint64_t connection, uint64_t started_ms, uint64_t fd, uint64_t request_number)
+{
+    __asm__ __volatile__("" : : "r"(worker), "r"(serial), "r"(connection),
+        "r"(started_ms), "r"(fd), "r"(request_number) : "memory");
+}
+
 static void cleanup(void *data) {
     inspector_ctx *c = data;
     if (!c->request) return;
@@ -214,6 +235,9 @@ static inspector_ctx *context(ngx_http_request_t *r, ngx_flag_t create) {
     ctx->connection_requests = r->connection->requests;
     ctx->declared_body_bytes = r->headers_in.content_length_n;
     if (ctx->selected) {
+        ngx_inspector_request_begin(ngx_pid, ctx->serial, r->connection->number,
+            (uint64_t)r->start_sec * 1000 + r->start_msec,
+            (uint64_t)r->connection->fd, ctx->connection_requests);
         ctx->request = r; ctx->live_next = live_requests;
         if (live_requests) live_requests->live_previous = ctx;
         live_requests = ctx; live_count++;
@@ -422,6 +446,9 @@ static ngx_int_t log_request(ngx_http_request_t *r) {
     ngx_msec_t start, now_wall;
     ssize_t n;
     if (r != r->main || !cf->enabled || !c || !c->selected) return NGX_OK;
+    ngx_inspector_request_end(ngx_pid, c->serial, r->connection->number,
+        (uint64_t)r->start_sec * 1000 + r->start_msec,
+        (uint64_t)r->connection->fd, c->connection_requests);
     observe(c, r, OBS_LOG, NGX_OK);
     w.p = buf; w.end = buf + sizeof(buf); w.full = 0;
     start = (ngx_msec_t) r->start_sec * 1000 + r->start_msec;

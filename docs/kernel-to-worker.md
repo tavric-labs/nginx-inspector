@@ -4,6 +4,10 @@ Replay adds a separate **Kernel → socket → nginx worker** walkthrough alongs
 the seven HTTP stages. Its Previous/Next controls explain the transport mechanism
 independently of HTTP playback.
 
+For measured connection events joined to a request, open the dedicated
+[Request journey and transport capture](./transport-capture.md) page. The Replay
+walkthrough below remains educational.
+
 **This is a mechanism walkthrough with captured connection context, not a packet
 trace. Kernel processing and queue residence times remain “Not measured.”**
 

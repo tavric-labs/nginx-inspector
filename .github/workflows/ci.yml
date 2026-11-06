@@ -35,5 +35,24 @@ jobs:
       - run: npm run test:viewer
       - run: npm run test:workers
       - run: npm run test:replay
+      - run: npm run test:journey
       - if: always()
         run: docker compose logs && docker compose down
+
+  transport:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Install tools on disposable CI runner
+        run: sudo apt-get update && sudo apt-get install -y nginx nginx-dev bpftrace build-essential ripgrep
+      - name: Real kernel and request-correlation canary
+        run: bash dev/transport-canary.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: transport-ubuntu-module
+          path: build/transport/

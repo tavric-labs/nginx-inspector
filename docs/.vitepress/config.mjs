@@ -22,6 +22,7 @@ export default defineDocsConfig({
     { text: 'NGINX INTERNALS', items: [
       { text: 'The nginx engine', link: '/nginx-engine' },
       { text: 'Kernel to worker', link: '/kernel-to-worker' },
+      { text: 'Transport capture', link: '/transport-capture' },
       { text: 'Native observations', link: '/native-observations' },
       { text: 'Reading the evidence', link: '/reading-events' },
       { text: 'Coverage and limits', link: '/coverage' }, { text: 'Architecture', link: '/architecture' }

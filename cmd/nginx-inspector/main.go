@@ -38,6 +38,18 @@ func run(args []string) error {
 	}
 	f := flag.NewFlagSet(args[0], flag.ContinueOnError)
 	switch args[0] {
+	case "trace":
+		o := collector.TraceOptions{}
+		f.IntVar(&o.MasterPID, "master-pid", 0, "verified host nginx master PID")
+		f.StringVar(&o.Module, "module", "", "absolute path to marker-enabled nginx module")
+		f.DurationVar(&o.Duration, "for", 60*time.Second, "bounded trace duration, 1s..10m")
+		f.IntVar(&o.UDPPort, "udp-port", 19876, "loopback collector transport port")
+		if e := f.Parse(args[1:]); e != nil {
+			return e
+		}
+		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer cancel()
+		return collector.RunTrace(ctx, o, os.Stdout, os.Stderr)
 	case "serve":
 		c := collector.Config{}
 		f.StringVar(&c.DB, "db", "inspector.sqlite3", "SQLite history file")
