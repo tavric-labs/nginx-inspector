@@ -27,13 +27,29 @@
     .legend{display:grid;gap:7px;padding:2px 2px 4px;font-size:12.5px;color:var(--muted)}.legend b{color:var(--text)}.legend a{color:var(--accent)}
     .stage-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px;padding:4px 0}.stage-card{border:1px solid var(--line);border-radius:8px;padding:9px 11px;background:#0f1728}.stage-card.off{opacity:.5;border-style:dashed}.stage-card.top{border-color:var(--amber);box-shadow:0 0 0 1px #f2ca8040}.stage-card b{display:block;font-size:13px}.stage-card span{display:block;font-size:11.5px;color:var(--muted)}.stage-card em{display:block;font-style:normal;font-size:13px;margin:2px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
     .stage-strip{display:flex;gap:2px;height:12px;margin:8px 0 12px}.stage-strip i{border-radius:2px;background:var(--accent);opacity:.85}.stage-strip i.top{background:var(--amber);opacity:1}.stage-strip i.off{background:#22304a;opacity:1}
+    .replay-panel{margin-bottom:22px}.replay-layout{display:grid;grid-template-columns:340px minmax(0,1fr);gap:0;border-top:1px solid var(--line)}.replay-side{border-right:1px solid var(--line);padding:14px;display:grid;gap:10px;align-content:start}.replay-main{padding:16px 20px 22px;display:grid;gap:14px;align-content:start;min-width:0}
+    .rp-tabs{display:grid;grid-template-columns:1fr 1fr;gap:6px}.rp-tabs button{padding:7px 10px;border-radius:8px}.rp-tabs button[aria-selected=true]{background:#1f3a4a;border-color:var(--accent);color:var(--accent)}.rp-count{margin-left:6px;font:600 11px ui-monospace,monospace;padding:1px 7px;border-radius:999px;background:#0b1020;color:var(--muted)}
+    .rp-list{display:grid;gap:7px;max-height:640px;overflow:auto;padding-right:2px}.rp-item{all:unset;box-sizing:border-box;cursor:pointer;display:grid;gap:5px;padding:9px 11px;border:1px solid var(--line);border-radius:9px;background:#0f1728}.rp-item:hover{border-color:#3b4d6d}.rp-item.on{border-color:var(--accent);box-shadow:0 0 0 1px #6cdbb340}.rp-item:focus-visible{outline:2px solid var(--accent)}.rp-top{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.rp-path{font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.rp-empty,.rp-hint{color:var(--muted);padding:12px 4px;font-size:13px}
+    .rp-rib{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;height:6px}.rp-rib i{background:#3d6f62;border-radius:2px}.rp-rib i.off{background:#22304a}.rp-rib i.top{background:var(--amber)}.rp-rib i.done{background:#3d6f62}.rp-rib i.now{background:var(--accent)}
+    .rp-title{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.rp-ttl{font-size:15px;word-break:break-all}.rp-live{color:var(--accent)}.rp-ctl{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.rp-ctl button.primary{background:#1f3a4a;border-color:var(--accent);color:var(--accent);min-width:104px}.rp-ctl select{background:#0b1020;color:var(--text);border:1px solid var(--line);border-radius:8px;padding:7px 9px}.rp-ctl input[type=range]{flex:1;min-width:160px;accent-color:#6cdbb3}.rp-warn{color:var(--amber);font-size:12.5px}.rp-live-note{color:var(--muted);font-size:12.5px}
+    .rp-svgwrap{border:1px solid var(--line);border-radius:12px;background:#0d1426;overflow-x:auto}.rp-svgwrap svg{display:block;width:100%;min-width:860px;height:auto}
+    .rp-nginx{fill:#101a30;stroke:#26334a;stroke-width:1.5}.rp-end{fill:#111d33;stroke:#36486a;stroke-width:1.5}.rp-end.off{opacity:.45;stroke-dasharray:4 4}.rp-lab{fill:#8d9db6;font:11px ui-monospace,monospace}.rp-endt{fill:#e8eef8;font:600 13px system-ui,sans-serif}
+    .rp-stage rect{fill:#14213a;stroke:#2c3d5c;stroke-width:1.5;cursor:pointer}.rp-stage.off rect{opacity:.4;stroke-dasharray:5 4}.rp-stage.done rect{fill:#143a35;stroke:#3d6f62}.rp-stage.inferred rect{stroke-dasharray:3 3}.rp-stage.top rect{stroke:#f2ca80}.rp-stage.now rect{fill:#1d4a42;stroke:#6cdbb3;stroke-width:3}.rp-stage.live.now rect{animation:rppulse 1.6s ease-in-out infinite}.rp-stage:focus-visible rect{stroke:#fff}
+    .rp-st{fill:#e8eef8;font:600 13px system-ui,sans-serif;pointer-events:none}.rp-sm{fill:#9aaac1;font:11px ui-monospace,monospace;pointer-events:none}.rp-glyph{fill:#6cdbb3;font:600 11px system-ui,sans-serif;pointer-events:none}.rp-stage.off .rp-glyph{fill:#7a869c}
+    .rp-edge{stroke:#5b6b86;stroke-width:2}.rp-edge.hot{stroke:#6cdbb3;stroke-width:3.4;stroke-dasharray:9 6;animation:rpflow .9s linear infinite}.rp-pk circle{fill:#6cdbb3;stroke:#0b1020;stroke-width:2.5}.rp-pk{transition:transform 1s ease-in-out}
+    @keyframes rpflow{to{stroke-dashoffset:-30}}@keyframes rppulse{50%{stroke-width:5}}@media (prefers-reduced-motion:reduce){.rp-edge.hot,.rp-stage.live.now rect{animation:none}.rp-pk{transition:none}}
+    .rp-time{display:grid;gap:5px}.rp-timelab{font-size:12px;color:var(--muted)}.rp-strip{position:relative;display:flex;gap:2px;height:16px}.rp-strip i{background:#3d6f62;border-radius:3px}.rp-strip i.off{background:#22304a}.rp-strip i.top{background:var(--amber)}.rp-strip i.now{outline:2px solid #6cdbb3}.rp-play{position:absolute;top:-4px;bottom:-4px;width:3px;background:#fff;border-radius:2px;transition:left .2s linear}
+    .rp-capbox{border:1px solid var(--line);border-radius:12px;background:#0f1728;padding:14px 16px}.rp-capbox h3{color:var(--text);font-size:14px;margin-bottom:6px}.rp-capbox h4{font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin:10px 0 4px}.rp-capbox .muted{color:var(--muted);font-size:12.5px;margin:3px 0 8px}.rp-capbox p.rp-hot{color:var(--amber);font-size:12.5px;margin-top:8px}
+    .rp-facts{display:grid;grid-template-columns:190px 1fr;gap:5px 14px;margin:6px 0 0}.rp-facts dt{color:var(--muted);font-size:12.5px}.rp-facts dd{margin:0;font-size:12.5px;word-break:break-word}.rp-kind{display:inline-block;font:600 10px system-ui;padding:1px 6px;border-radius:999px;margin-right:4px;text-transform:uppercase;letter-spacing:.04em}.rp-kind.obs{background:#143a35;color:#6cdbb3}.rp-kind.cfg{background:#16294a;color:#91b9ff}
+    .rp-att{display:grid;gap:5px;margin:8px 0}.rp-attbars{display:grid;gap:4px}.rp-attbar{display:grid;grid-template-columns:170px 1fr;gap:10px;align-items:center;font-size:12px;color:var(--muted)}.rp-attbar i{display:block;height:8px;border-radius:3px;background:#3d6f62}.rp-attbar i.h{background:#91b9ff}.rp-attbar i.r{background:#6cdbb3}.rp-attbar i.c{background:#f2ca80}
+    .rp-log{margin:6px 0;padding-left:18px;font-size:12px;color:var(--text)}.rp-tbl{min-width:0;width:100%}.rp-tbl td{padding:6px 8px;border-bottom:1px solid var(--line);font-size:12px}.rp-tbl tr.on td{background:#16294a}
   </style>
 </head>
 <body>
 <main>
   <header>
     <div class="brand"><span class="logo" aria-hidden="true">n</span><div><h1>nginx inspector</h1><p class="subtitle">Native nginx internals · request execution and saved history</p></div></div>
-    <div class="header-actions"><button id="show-requests" type="button" aria-pressed="true">Requests</button><button id="show-workers" type="button" aria-pressed="false">Workers</button><span class="pill" id="capture"><span class="dot"></span><span id="capture-label">Checking capture</span></span><span class="pill">Read-only viewer</span><button id="pause" type="button" aria-pressed="false">Pause refresh</button></div>
+    <div class="header-actions"><button id="show-requests" type="button" aria-pressed="true">Requests</button><button id="show-workers" type="button" aria-pressed="false">Workers</button><button id="show-replay" type="button" aria-pressed="false">Replay</button><span class="pill" id="capture"><span class="dot"></span><span id="capture-label">Checking capture</span></span><span class="pill">Read-only viewer</span><button id="pause" type="button" aria-pressed="false">Pause refresh</button></div>
   </header>
   <section class="panel native-overview" aria-label="Native nginx observations"><div class="panel-heading"><div><h2>Inside nginx · capture evidence</h2><p>Counts from the latest 100 completed records. Worker counts are observed PIDs, not a live inventory.</p></div><a href="https://nginx-inspector.tavric-labs.net/nginx-engine" target="_blank" rel="noopener noreferrer">Engine manual ↗</a></div><div id="native-snapshot" class="native-snapshot"></div></section>
   <section id="worker-panel" hidden class="panel worker-panel" aria-labelledby="workers-title"><div class="panel-heading"><div><h2 id="workers-title">Workers & concurrency</h2><p id="worker-state">Loading process samples…</p></div><span class="connection" id="worker-updated"></span></div><div id="worker-counters" class="worker-counters"></div><div id="worker-body" class="worker-body"></div><p class="detail-note worker-note">Client connections are nginx-wide. Worker slots also include upstream/listening/internal connections. In-flight requests include sampled eligible requests observed while capture was active.</p></section>
@@ -43,6 +59,17 @@
     <article class="metric"><div class="metric-label">Median latency · p50</div><div class="metric-value"><span id="p50">—</span><small>ms</small></div><div class="metric-note">Half of requests are faster</div></article>
     <article class="metric"><div class="metric-label">Tail latency · p95</div><div class="metric-value"><span id="p95">—</span><small>ms</small></div><div class="metric-note">95% of requests are faster</div></article>
     <article class="metric"><div class="metric-label">Tail latency · p99</div><div class="metric-value"><span id="p99">—</span><small>ms</small></div><div class="metric-note">99% of requests are faster</div></article>
+  </section>
+  <section id="replay-panel" hidden class="panel replay-panel" aria-labelledby="replay-title">
+    <div class="panel-heading"><div><h2 id="replay-title">Replay · which stage did what <span id="replay-doc"></span></h2><p>Pick a completed or in-flight request and watch it move through nginx's seven stages, with what nginx did at each one.</p></div><span class="connection" id="replay-note"></span></div>
+    <div class="replay-layout">
+      <aside class="replay-side">
+        <div class="rp-tabs" role="tablist" aria-label="Request source"><button id="tab-completed" type="button" role="tab" aria-selected="true">Completed <span id="n-completed" class="rp-count">0</span></button><button id="tab-inflight" type="button" role="tab" aria-selected="false">In flight <span id="n-inflight" class="rp-count">0</span></button></div>
+        <label class="search"><span class="sr-only">Filter requests</span><input id="rp-search" type="search" placeholder="Filter by path, method or status…" autocomplete="off"></label>
+        <div id="rp-list" class="rp-list" role="list"></div>
+      </aside>
+      <div class="replay-main" id="rp-main"></div>
+    </div>
   </section>
   <section id="requests-panel" class="panel" aria-labelledby="requests-title">
     <div class="panel-heading"><div><h2 id="requests-title">Recent requests</h2><p>Inspect nginx routing, filters, upstream attempts, buffering and event state for the latest 100 requests.</p></div><div class="connection" id="connection" role="status">Connecting…</div></div>
@@ -110,7 +137,7 @@
   function nativeSummary(){const events=state.events.filter(e=>e.native),n=events.map(e=>e.native),facts=[['Native events',events.length+' / '+state.events.length],['Worker PIDs seen',new Set(n.map(x=>x.nginx.worker_pid)).size],['Multiple attempts',n.filter(x=>x.attempts.length>1).length],['Body spooled',n.filter(x=>x.request_body.disk_buffered).length],['Child requests',n.reduce((v,x)=>v+x.subrequests.length,0)],['Rate rejections',n.filter(x=>x.policy.rate_limit_status==='REJECTED').length],['Cache HITs',events.filter(e=>e.upstream?.cache_status==='HIT').length],['Bandwidth limited',n.filter(x=>x.policy.limit_rate_bps>0).length]];const wrap=$('native-snapshot');wrap.replaceChildren();for(const [label,value]of facts){const item=node('div','native-fact');item.append(node('strong','',value),node('span','',label));wrap.append(item);}}
   async function refresh() {
     if(state.paused||state.refreshing||document.hidden)return;state.refreshing=true;
-    try{const [s,events,capture,workers]=await Promise.all([json('/api/summary'),json('/api/events'),json('/api/capture'),json('/api/workers')]);state.events=events;nativeSummary();renderWorkers(workers);state.loaded=true;summary(s,capture);renderRows();$('connection').textContent='Connected · live updates';$('connection').className='connection good';$('banner').classList.remove('visible');$('updated').textContent='Updated '+new Date().toLocaleTimeString();}
+    try{const [s,events,capture,workers]=await Promise.all([json('/api/summary'),json('/api/events'),json('/api/capture'),json('/api/workers')]);state.events=events;nativeSummary();renderWorkers(workers);afterWorkers(workers);state.loaded=true;summary(s,capture);renderRows();$('connection').textContent='Connected · live updates';$('connection').className='connection good';$('banner').classList.remove('visible');$('updated').textContent='Updated '+new Date().toLocaleTimeString();}
     catch(error){$('connection').textContent='Connection interrupted';$('connection').className='connection bad';$('banner').textContent='The collector is unavailable. '+(state.loaded?'Showing the last loaded requests.':'Retrying automatically.');$('banner').classList.add('visible');}
     finally{state.refreshing=false;}
   }
@@ -235,8 +262,239 @@
     try{const event=await json('/api/events/'+encodeURIComponent(id));if(version!==state.detailRequest)return;state.detail=event;renderDetail(event);$('download').disabled=false;}
     catch(error){if(version!==state.detailRequest)return;const box=node('div','error-state'),retry=node('button','','Retry');retry.type='button';retry.onclick=()=>openRequest(id,trigger);box.append(node('p','',error.message),retry);$('detail-body').replaceChildren(box);}
   }
-  function showWorkers(active){$('worker-panel').hidden=!active;$('requests-panel').hidden=active;document.querySelector('.metrics').hidden=active;$('show-workers').setAttribute('aria-pressed',String(active));$('show-requests').setAttribute('aria-pressed',String(!active));}
-  $('show-workers').onclick=()=>showWorkers(true);$('show-requests').onclick=()=>showWorkers(false);
+
+  /* ===================== Replay: which stage did what ===================== */
+  const R={tab:'completed',kind:null,id:null,copy:null,mode:'story',speed:'auto',playing:false,step:0,t:0,timer:0,raf:0,last:0};
+  const SIGHT=new Map();
+  const STAGE_DOING=['The request line and headers have been read.','nginx chose a location and applied rewrites.','Access checks, rate limits and subrequests run.','The content handler runs: a proxy call to the backend, or nginx answers itself.','The response headers are being sent.','The response body flows through the filter chain.','The request finished and was logged.'];
+  const stageIcon=['1','2','3','4','5','6','7'];
+  function stageFirsts(e){
+    const first=Array(7).fill(null),n=e.native;
+    if(n&&n.trace&&n.trace.length){for(const t of n.trace){if(t.subrequest)continue;const i=lifeOf[t.event];if(i!==undefined&&first[i]===null)first[i]=t.at_ms;}if(first[6]===null&&typeof e.duration_ms==='number')first[6]=e.duration_ms;return first;}
+    const ph=e.phases_ms||{};[ph.post_read,ph.rewrite,ph.access,ph.content,ph.header_filter,ph.first_body_filter,e.duration_ms].forEach((v,i)=>{if(typeof v==='number')first[i]=v;});return first;
+  }
+  function stageSpent(first,duration){
+    const total=Math.max(typeof duration==='number'?duration:0,...first.filter(v=>v!==null),1);
+    const spent=first.map((v,i)=>{if(v===null||i===6)return null;let next=null;for(let j=i+1;j<7;j++)if(first[j]!==null){next=first[j];break;}return Math.max(0,(next===null?total:next)-v);});
+    const longest=Math.max(...spent.filter(v=>v!==null),0);return {spent,total,top:longest>0?spent.indexOf(longest):-1};
+  }
+  function stageEntry(e,i){for(const t of (e.native&&e.native.trace)||[])if(!t.subrequest&&lifeOf[t.event]===i)return t;return null;}
+  function stageFacts(e,i){
+    const n=e.native||{},r=n.routing||{},p=n.policy||{},resp=n.response||{},c=n.connection||{},rb=n.request_body||{},att=n.attempts||[],subs=n.subrequests||[],L=[];
+    const add=(k,v,kind)=>{if(v!==undefined&&v!==null&&v!==''&&v!=='undefined')L.push([k,String(v),kind||'obs']);};
+    if(i===0){add('Request',e.method+' '+e.path);add('Connection',c.request_number?'request #'+c.request_number+(c.keepalive?' on a kept-alive connection':' on a fresh connection'):'');add('Protocol',[c.protocol,e.tls&&e.tls.version,e.tls&&e.tls.cipher].filter(Boolean).join(' · '));add('Request size',typeof e.request_bytes==='number'?count(e.request_bytes)+' bytes of headers':'');}
+    if(i===1){add('Server name',r.server_name);add('Location selected',r.location!==undefined?(r.location||'(default)')+(r.location_kind?' · '+r.location_kind:''):'');add('Path',r.initial_path&&r.initial_path!==e.path?r.initial_path+' → '+e.path:e.path);add('Rewrite visits',e.rewrite_visits);}
+    if(i===2){add('Access policy',p.access_satisfy?'satisfy '+p.access_satisfy:'','cfg');add('Rate limiter',p.rate_limit_status||'no limiter status reported');add('Subrequests',subs.length?subs.map(x=>text(x.path||x.initial_path)+' → '+text(x.status)).join('; '):'none');}
+    if(i===3){
+      if(att.length){att.forEach((a,k)=>add('Upstream attempt '+(k+1),a.peer+' · connect '+ms(a.connect_ms)+' ms · first byte '+ms(a.header_ms)+' ms · status '+(a.status||'none')+' · sent '+count(a.sent_bytes)+' B, received '+count(a.received_bytes)+' B'));add('Retry policy',(p.retry_on||[]).join(', '),'cfg');add('Timeouts','connect '+ms(p.connect_timeout_ms)+' ms · read '+ms(p.read_timeout_ms)+' ms','cfg');}
+      else add('Content','nginx answered by itself: no upstream was contacted');
+      if(rb.observed_bytes)add('Upload',count(rb.observed_bytes)+' bytes seen'+(rb.disk_buffered?' · spilled to a temp file':''));
+    }
+    if(i===4){add('Status',e.status);add('Content type',e.response_headers&&e.response_headers['content-type']);add('Encoding',resp.content_encoding);add('Output',resp.chunked?'chunked':'');if(p.response_buffering_configured!==undefined)add('Buffering','configured '+(p.response_buffering_configured?'on':'off')+' · effective '+(p.response_buffering?'on':'off'));}
+    if(i===5){if(typeof resp.memory_bytes==='number')add('Body seen at the hook',count((resp.memory_bytes||0)+(resp.file_bytes||0))+' bytes in '+count(resp.buffers)+' buffer(s)');add('Delivered on the wire',e.wire_bytes!==undefined&&e.wire_bytes!==null?e.wire_bytes+' bytes':'');add('Cache',resp.cache_file_used?'served from a cache file':'');}
+    if(i===6){add('Total time',ms(e.duration_ms)+' ms');if(c.keepalive!==undefined)add('Connection after',c.keepalive?'kept alive for reuse':'closed');if(c.client_error)add('Client','closed the connection early');}
+    return L;
+  }
+  const DIA=[0,1,2,3,4,5,6].map(i=>[120+i*122,70]);
+  function ribbon(first,duration){const wrap=node('span','rp-rib'),{top}=stageSpent(first,duration);first.forEach((v,i)=>{const seg=node('i',v===null?'off':(i===top?'top':''));seg.title=lifeStages[i];wrap.append(seg);});return wrap;}
+  function inflightRows(){const out=[];for(const w of (state.workers&&state.workers.live_workers)||[])for(const r of w.requests||[])out.push(Object.assign({worker:w.worker_pid,seenAt:state.workersAt},r));return out;}
+  function afterWorkers(w){
+    state.workers=w;state.workersAt=Date.now();const now=Date.now();
+    for(const worker of w.live_workers||[])for(const r of worker.requests||[]){let a=SIGHT.get(r.id);if(!a){a={seen:now,log:[]};SIGHT.set(r.id,a);}a.last=now;const l=a.log[a.log.length-1];if(!l||l.phase!==r.phase||l.io!==r.io||l.status!==r.status){a.log.push({at:now,elapsed:r.elapsed_ms,phase:r.phase,io:r.io,status:r.status,bytes:r.response_bytes});if(a.log.length>30)a.log.shift();}}
+    for(const [id,a] of SIGHT)if(now-a.last>120000)SIGHT.delete(id);
+    if(!$('replay-panel').hidden){renderReplayList();if(R.kind==='inflight')paintReplay();}
+  }
+  function renderReplayList(){
+    const list=$('rp-list'),q=$('rp-search').value.trim().toLowerCase();
+    const comp=state.events,live=inflightRows();$('n-completed').textContent=comp.length;$('n-inflight').textContent=live.length;
+    $('tab-completed').setAttribute('aria-selected',String(R.tab==='completed'));$('tab-inflight').setAttribute('aria-selected',String(R.tab==='inflight'));
+    list.replaceChildren();
+    if(R.tab==='completed'){
+      const rows=comp.filter(e=>!q||[e.path,e.method,e.status].join(' ').toLowerCase().includes(q));
+      if(!rows.length)list.append(node('p','rp-empty',comp.length?'Nothing matches the filter.':'No completed requests yet. Start a capture to record some.'));
+      for(const e of rows){
+        const b=node('button','rp-item'+(R.kind==='completed'&&R.id===e.id?' on':''));b.type='button';b.setAttribute('role','listitem');
+        const top=node('span','rp-top');top.append(node('span','method',e.method),node('span','status '+statusClass(e.status),e.status),node('span','mono muted',ms(e.duration_ms)+' ms'));
+        b.append(top,node('span','rp-path mono',e.path),ribbon(stageFirsts(e),e.duration_ms));b.onclick=()=>openReplay('completed',e.id);list.append(b);
+      }
+    }else{
+      const rows=live.filter(r=>!q||[r.path,r.method,r.status].join(' ').toLowerCase().includes(q));
+      if(!rows.length)list.append(node('p','rp-empty',live.length?'Nothing matches the filter.':(state.workers&&state.workers.capture_active?'No sampled requests are in flight right now.':'Capture is OFF, so there is no live telemetry.')));
+      for(const r of rows){
+        const b=node('button','rp-item'+(R.kind==='inflight'&&R.id===r.id?' on':''));b.type='button';b.setAttribute('role','listitem');
+        const top=node('span','rp-top');top.append(node('span','method',r.method),node('span','mono muted',ms(r.elapsed_ms)+' ms elapsed'),node('span','mono muted','pid '+r.worker));
+        const lf=lifeOf[r.phase],bar=node('span','rp-rib');for(let i=0;i<7;i++)bar.append(node('i',lf===undefined?'off':(i<lf?'done':i===lf?'now':'off')));
+        b.append(top,node('span','rp-path mono',r.path),bar);b.onclick=()=>openReplay('inflight',r.id);list.append(b);
+      }
+    }
+  }
+  function currentModel(){
+    if(R.kind==='completed'){
+      const e=state.events.find(x=>x.id===R.id)||R.copy;if(!e)return null;R.copy=e;
+      const first=stageFirsts(e),duration=typeof e.duration_ms==='number'?e.duration_ms:Math.max(...first.filter(v=>v!==null),0);
+      const reached=[];first.forEach((v,i)=>{if(v!==null)reached.push(i);});
+      return {kind:'completed',e,first,duration,reached,sp:stageSpent(first,duration)};
+    }
+    if(R.kind==='inflight'){
+      const r=inflightRows().find(x=>x.id===R.id);
+      if(!r){const done=state.events.find(x=>x.id===R.id);return {kind:'gone',done};}
+      return {kind:'inflight',r,cur:lifeOf[r.phase]};
+    }
+    return null;
+  }
+  function openReplayPanel(){renderReplayList();if(!R.kind){const first=state.events[0];if(first)openReplay('completed',first.id);else buildMain();}else paintReplay();}
+  function openReplay(kind,id){stopReplay();R.kind=kind;R.id=id;R.copy=null;R.step=0;R.t=0;R.tab=kind;renderReplayList();buildMain();
+    const m=currentModel();if(m&&m.kind==='completed'){if(m.reached.length)R.playing=false;} paintReplay();}
+  function stopReplay(){R.playing=false;clearInterval(R.timer);cancelAnimationFrame(R.raf);R.last=0;}
+  function seqOf(m){return m.reached.length?m.reached:[0];}
+  function stageAt(m){
+    if(m.kind==='inflight')return m.cur===undefined?-1:m.cur;
+    if(R.mode==='story')return seqOf(m)[Math.min(R.step,seqOf(m).length-1)];
+    let cur=seqOf(m)[0];for(const i of m.reached)if(m.first[i]<=R.t)cur=i;return cur;
+  }
+  function play(){
+    const m=currentModel();if(!m||m.kind!=='completed')return;
+    if(R.mode==='story'){
+      if(R.step>=seqOf(m).length-1)R.step=0;R.playing=true;clearInterval(R.timer);
+      R.timer=setInterval(()=>{const mm=currentModel();if(!mm||mm.kind!=='completed'){stopReplay();return;}if(R.step>=seqOf(mm).length-1){R.playing=false;clearInterval(R.timer);paintReplay();return;}R.step++;paintReplay();},2600);
+    }else{
+      if(R.t>=m.duration)R.t=0;R.playing=true;R.last=0;cancelAnimationFrame(R.raf);
+      const loop=ts=>{if(!R.playing)return;const mm=currentModel();if(!mm||mm.kind!=='completed'){stopReplay();return;}if(!R.last)R.last=ts;const dt=ts-R.last;R.last=ts;const sp=R.speed==='auto'?Math.max(mm.duration/9000,0.0001):+R.speed;R.t=Math.min(mm.duration,R.t+dt*sp);if(R.t>=mm.duration){R.playing=false;paintReplay();return;}paintReplay();R.raf=requestAnimationFrame(loop);};
+      R.raf=requestAnimationFrame(loop);
+    }
+    paintReplay();
+  }
+  function pauseReplay(){R.playing=false;clearInterval(R.timer);cancelAnimationFrame(R.raf);R.last=0;paintReplay();}
+  function buildMain(){
+    const main=$('rp-main');main.replaceChildren();
+    if(!R.kind){main.append(node('div','rp-hint','Pick a request on the left. Completed requests replay the full journey; in-flight requests show where a live request is right now.'));return;}
+    const head=node('div','rp-head');head.id='rp-head';
+    const ctl=node('div','rp-ctl');ctl.id='rp-ctl';
+    const svgWrap=node('div','rp-svgwrap');svgWrap.innerHTML='<svg id="rp-svg" viewBox="0 0 980 300" role="img" aria-label="The seven nginx stages a request passes through" xmlns="http://www.w3.org/2000/svg"><defs><marker id="rpa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#5b6b86"/></marker><marker id="rph" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#6cdbb3"/></marker></defs></svg>';
+    const time=node('div','rp-time');time.id='rp-time';
+    const cap=node('div','rp-cap');cap.id='rp-cap';const extra=node('div','rp-extra');extra.id='rp-extra';
+    main.append(head,ctl,svgWrap,time,cap,extra);
+    const svg=$('rp-svg'),NS='http://www.w3.org/2000/svg';
+    const mk=(tag,attrs,txt)=>{const el=document.createElementNS(NS,tag);for(const k in attrs)el.setAttribute(k,attrs[k]);if(txt!==undefined)el.textContent=txt;svg.append(el);return el;};
+    mk('rect',{x:112,y:14,width:868,height:176,rx:8,class:'rp-nginx'});mk('text',{x:970,y:32,class:'rp-lab','text-anchor':'end'},'nginx worker');
+    mk('rect',{x:2,y:80,width:94,height:52,rx:6,class:'rp-end'});mk('text',{x:49,y:102,class:'rp-endt','text-anchor':'middle'},'Client');mk('text',{x:49,y:120,class:'rp-lab','text-anchor':'middle'},'browser / MCP');
+    const edge=(id,x1,y1,x2,y2,dash)=>{const l=mk('line',{id,x1,y1,x2,y2,class:'rp-edge'+(dash?' dash':''),'marker-end':'url(#rpa)'});return l;};
+    DIA.forEach((p,i)=>{if(i<6)edge('rp-e'+i,p[0]+108,106,DIA[i+1][0]-3,106);});
+    edge('rp-ein',98,106,DIA[0][0]-3,106);
+    mk('rect',{x:420,y:226,width:280,height:60,rx:6,class:'rp-end',id:'rp-upbox'});mk('text',{x:560,y:250,class:'rp-endt','text-anchor':'middle'},'Upstream');mk('text',{x:560,y:270,class:'rp-lab','text-anchor':'middle',id:'rp-uptxt'},'');
+    edge('rp-eup',DIA[3][0]+54,160,DIA[3][0]+54,224,false);edge('rp-eback',DIA[4][0]+54,224,DIA[4][0]+54,162,false);
+    mk('text',{x:DIA[3][0]+62,y:200,class:'rp-lab'},'forward');mk('text',{x:DIA[4][0]+62,y:200,class:'rp-lab'},'first byte');
+    const path=mk('path',{id:'rp-eout',d:'M '+(DIA[6][0]+54)+' 160 L '+(DIA[6][0]+54)+' 210 L 49 210 L 49 134',class:'rp-edge',fill:'none','marker-end':'url(#rpa)'});
+    mk('text',{x:130,y:205,class:'rp-lab'},'response back to the client');
+    DIA.forEach((p,i)=>{
+      const g=mk('g',{class:'rp-stage',id:'rp-s'+i,tabindex:'0',role:'button','aria-label':'Stage '+(i+1)+' '+lifeStages[i]});
+      const r=document.createElementNS(NS,'rect');r.setAttribute('x',p[0]);r.setAttribute('y',54);r.setAttribute('width',108);r.setAttribute('height',104);r.setAttribute('rx',6);g.append(r);
+      const t1=document.createElementNS(NS,'text');t1.setAttribute('x',p[0]+54);t1.setAttribute('y',80);t1.setAttribute('text-anchor','middle');t1.setAttribute('class','rp-st');t1.textContent=(i+1)+'  '+lifeStages[i];g.append(t1);
+      const t2=document.createElementNS(NS,'text');t2.setAttribute('x',p[0]+54);t2.setAttribute('y',104);t2.setAttribute('text-anchor','middle');t2.setAttribute('class','rp-sm');t2.setAttribute('id','rp-t'+i);g.append(t2);
+      const t3=document.createElementNS(NS,'text');t3.setAttribute('x',p[0]+54);t3.setAttribute('y',124);t3.setAttribute('text-anchor','middle');t3.setAttribute('class','rp-sm');t3.setAttribute('id','rp-d'+i);g.append(t3);
+      const t4=document.createElementNS(NS,'text');t4.setAttribute('x',p[0]+54);t4.setAttribute('y',146);t4.setAttribute('text-anchor','middle');t4.setAttribute('class','rp-glyph');t4.setAttribute('id','rp-g'+i);g.append(t4);
+      g.onclick=()=>{const m=currentModel();if(!m||m.kind!=='completed')return;pauseReplay();if(R.mode==='story'){const k=seqOf(m).indexOf(i);if(k>=0)R.step=k;}else if(m.first[i]!==null)R.t=m.first[i];paintReplay();};
+      g.onkeydown=ev=>{if(ev.key==='Enter'||ev.key===' '){ev.preventDefault();g.onclick();}};
+    });
+    const pk=document.createElementNS(NS,'g');pk.setAttribute('id','rp-pk');pk.setAttribute('class','rp-pk');const c=document.createElementNS(NS,'circle');c.setAttribute('r',9);pk.append(c);svg.append(pk);
+  }
+  function ctlBtn(label,fn,cls,aria){const b=node('button',cls||'',label);b.type='button';b.onclick=fn;if(aria)b.setAttribute('aria-label',aria);return b;}
+  function paintReplay(){
+    if(!R.kind)return;
+    const m=currentModel(),head=$('rp-head'),ctl=$('rp-ctl'),cap=$('rp-cap'),extra=$('rp-extra'),time=$('rp-time');if(!head)return;
+    if(!m){head.replaceChildren(node('p','rp-hint','This request is no longer available.'));return;}
+    if(m.kind==='gone'){
+      head.replaceChildren(node('h3','','This request is no longer in flight'));ctl.replaceChildren();cap.replaceChildren();extra.replaceChildren();time.replaceChildren();
+      const p=node('p','rp-hint',m.done?'It finished. Its full replay is now available under Completed.':'It finished or left the sampled set. Completed requests are listed under Completed.');cap.append(p);
+      if(m.done){const b=ctlBtn('Open the full replay',()=>openReplay('completed',R.id),'primary');cap.append(b);}return;
+    }
+    const e=m.kind==='completed'?m.e:null,r=m.kind==='inflight'?m.r:null;
+    const cur=stageAt(m);
+    /* head */
+    head.replaceChildren();
+    const title=node('div','rp-title');
+    if(e)title.append(node('span','method',e.method),node('span','mono rp-ttl',e.path),node('span','status '+statusClass(e.status),e.status),node('span','mono muted',ms(e.duration_ms)+' ms in total'));
+    else title.append(node('span','method',r.method),node('span','mono rp-ttl',r.path),node('span','status '+(r.status?statusClass(r.status):''),r.status||'status not set'),node('span','mono muted rp-live','live · about '+ms(r.elapsed_ms+(Date.now()-r.seenAt))+' ms elapsed'));
+    head.append(title);
+    /* controls */
+    ctl.replaceChildren();
+    if(m.kind==='completed'){
+      const seq=seqOf(m);
+      ctl.append(ctlBtn('Back',()=>{pauseReplay();if(R.mode==='story')R.step=Math.max(0,R.step-1);else{const k=seq.indexOf(stageAt(m));R.t=m.first[seq[Math.max(0,k-1)]]||0;}paintReplay();},'','Previous stage'));
+      ctl.append(ctlBtn(R.playing?'Pause':(R.step>=seq.length-1&&R.mode==='story'||R.t>=m.duration&&R.mode==='scaled'?'Replay again':'Play'),()=>R.playing?pauseReplay():play(),'primary'));
+      ctl.append(ctlBtn('Next',()=>{pauseReplay();if(R.mode==='story')R.step=Math.min(seq.length-1,R.step+1);else{const k=seq.indexOf(stageAt(m));R.t=m.first[seq[Math.min(seq.length-1,k+1)]]||0;}paintReplay();},'','Next stage'));
+      const mode=node('select');mode.id='rp-mode';mode.setAttribute('aria-label','Replay mode');for(const [v,l] of [['story','Story: 2.6 s per stage'],['scaled','True to scale']]){const o=node('option','',l);o.value=v;mode.append(o);}mode.value=R.mode;mode.onchange=()=>{pauseReplay();R.mode=mode.value;R.step=0;R.t=0;paintReplay();};ctl.append(mode);
+      if(R.mode==='scaled'){
+        const sp=node('select');sp.id='rp-speed';sp.setAttribute('aria-label','Playback speed');for(const [v,l] of [['auto','Auto: about 9 s in total'],['0.001','x0.001 (4 ms takes 4 s)'],['0.01','x0.01'],['1','x1 real time'],['10','x10'],['100','x100'],['1000','x1000']]){const o=node('option','',l);o.value=v;sp.append(o);}sp.value=R.speed;sp.onchange=()=>{R.speed=sp.value;if(R.playing){pauseReplay();play();}};ctl.append(sp);
+        const sl=node('input');sl.type='range';sl.min='0';sl.max=String(Math.max(1,Math.round(m.duration)));sl.step='1';sl.value=String(Math.round(R.t));sl.id='rp-scrub';sl.setAttribute('aria-label','Position in the request');sl.oninput=()=>{pauseReplay();R.t=+sl.value;paintReplay();};ctl.append(sl);
+        ctl.append(node('span','mono muted','t = '+ms(Math.round(R.t))+' ms of '+ms(Math.round(m.duration))+' ms'));
+      }else ctl.append(node('span','mono muted','Step '+(Math.min(R.step,seq.length-1)+1)+' of '+seq.length));
+      if(!m.reached.length)ctl.append(node('span','rp-warn','No stage data: this request began before capture.'));
+    }else{ctl.append(node('span','rp-live-note','Live view. Only the latest stage is known while a request is open; the full replay appears under Completed when it finishes.'));}
+    /* svg stages */
+    for(let i=0;i<7;i++){
+      const g=$('rp-s'+i);if(!g)continue;let cls='rp-stage';
+      if(m.kind==='completed'){const reached=m.first[i]!==null;cls+=reached?'':' off';if(reached&&((R.mode==='story'&&seqOf(m).indexOf(i)<=seqOf(m).indexOf(cur))||(R.mode==='scaled'&&m.first[i]<=R.t)))cls+=' done';if(i===cur)cls+=' now';if(i===m.sp.top)cls+=' top';
+        $('rp-t'+i).textContent=reached?'at '+ms(m.first[i])+' ms':'not reached';$('rp-d'+i).textContent=reached&&i<6?'spent '+ms(m.sp.spent[i])+' ms':'';$('rp-g'+i).textContent=i===cur?'now':(reached?(cls.includes('done')?'done':''):'skipped');}
+      else{if(m.cur!==undefined){if(i<m.cur)cls+=' done inferred';if(i===m.cur)cls+=' now live';}$('rp-t'+i).textContent=i===m.cur?'latest seen':(m.cur!==undefined&&i<m.cur?'passed':'');$('rp-d'+i).textContent='';$('rp-g'+i).textContent=i===m.cur?'now':(m.cur!==undefined&&i<m.cur?'passed':'');}
+      g.setAttribute('class',cls);
+    }
+    const pk=$('rp-pk');if(pk&&cur>=0){pk.style.transform='translate('+(DIA[cur][0]+54)+'px,'+(DIA[cur][1]-28)+'px)';}
+    /* arrows */
+    const hot=(id,on)=>{const el=$(id);if(!el)return;el.setAttribute('class',(el.getAttribute('class')||'').replace(/ hot/g,'')+(on?' hot':''));el.setAttribute('marker-end',on?'url(#rph)':'url(#rpa)');};
+    const att=(e&&e.native&&e.native.attempts)||[],hasUp=e?att.length>0||!!(e.upstream&&e.upstream.address):!!r;
+    for(let i=0;i<6;i++)hot('rp-e'+i,cur===i+1);hot('rp-ein',cur===0);hot('rp-eup',cur===3&&hasUp);hot('rp-eback',cur===4&&hasUp);hot('rp-eout',cur===6);
+    const upText=e?(e.upstream&&e.upstream.address?e.upstream.address+(att.length>1?' · '+att.length+' attempts':''):'none: nginx answered itself'):'peer known once it completes';
+    $('rp-uptxt').textContent=upText;$('rp-upbox').setAttribute('class','rp-end'+(e&&!hasUp?' off':''));
+    /* proportional time strip (completed only) */
+    time.replaceChildren();
+    if(m.kind==='completed'&&m.reached.length){
+      const lab=node('div','rp-timelab','Where the time went (to scale). The playhead follows the replay.');const strip=node('div','rp-strip');
+      for(let i=0;i<6;i++){const seg=node('i',(m.first[i]===null?'off':'')+(i===m.sp.top?' top':'')+(i===cur?' now':''));seg.style.flex=String(Math.max(m.sp.spent[i]||0,m.sp.total*0.025));seg.title=lifeStages[i]+(m.first[i]===null?': not reached':': '+ms(m.sp.spent[i])+' ms');strip.append(seg);}
+      const ph=node('b','rp-play');const pos=R.mode==='scaled'?Math.min(1,R.t/Math.max(m.sp.total,1)):(m.first[cur]===null?0:Math.min(1,m.first[cur]/Math.max(m.sp.total,1)));ph.style.left=(pos*100)+'%';strip.append(ph);time.append(lab,strip);
+    }
+    /* caption */
+    cap.replaceChildren();
+    if(cur<0||cur===undefined){cap.append(node('p','rp-hint','The stage of this request is not known yet.'));}
+    else{
+      const box=node('section','rp-capbox');
+      const h=node('h3','',(cur+1)+' '+lifeStages[cur]+' · '+STAGE_DOING[cur]);box.append(h);
+      if(e){
+        const when=m.first[cur];box.append(node('p','muted',when===null?'This stage was not reached.':'Reached at '+ms(when)+' ms'+(cur<6&&m.sp.spent[cur]!==null?' · spent '+ms(m.sp.spent[cur])+' ms before the next stage.':'.')));
+        const facts=stageFacts(e,cur);
+        if(facts.length){const dl=node('dl','rp-facts');for(const [k,v,kind] of facts){dl.append(node('dt','',k));const dd=node('dd','mono');dd.append(node('span','rp-kind '+kind,kind==='cfg'?'configured':'observed'),document.createTextNode(' '+v));dl.append(dd);}box.append(dl);}
+        else box.append(node('p','muted','The module recorded no extra detail for this stage.'));
+        const ent=stageEntry(e,cur);if(ent&&typeof ent.io==='number'){const io=node('div','rp-io');io.append(node('h4','','Sockets when this stage was reached'),ioCell(ent.io));box.append(io);}
+        if(m.sp.top===cur&&m.sp.spent[cur]>=1)box.append(node('p','rp-hot',"This is where the request spent most of its time."));
+      }else{
+        box.append(node('p','muted','Last observed hook: '+(nativeNames[r.phase]||r.phase)+'. Elapsed about '+ms(r.elapsed_ms+(Date.now()-r.seenAt))+' ms.'));
+        const dl=node('dl','rp-facts');const add=(k,v)=>{dl.append(node('dt','',k));dl.append(node('dd','mono',v));};add('Status so far',r.status||'not set');add('Response bytes seen',count(r.response_bytes));add('Worker',r.worker);box.append(dl);
+        const io=node('div','rp-io');io.append(node('h4','','What nginx\'s sockets are doing now'),ioCell(r.io));box.append(io);
+        box.append(node('p','muted','Stages before this one are inferred as passed. They happen in about a millisecond, so a live view cannot show them.'));
+      }
+      cap.append(box);
+    }
+    /* extras */
+    extra.replaceChildren();
+    if(e&&e.native&&(e.native.attempts||[]).length){
+      const sec=node('section','rp-capbox');sec.append(node('h3','','Upstream attempts · when each phase ended, from the start of the attempt'));
+      for(const a of e.native.attempts){const mx=Math.max(a.response_ms||0,a.header_ms||0,a.connect_ms||0,1);const row=node('div','rp-att');row.append(node('span','mono',a.peer+' · '+(a.status||'no status')));const bars=node('div','rp-attbars');
+        for(const [lab,v,cls] of [['connect',a.connect_ms,'c'],['first byte',a.header_ms,'h'],['response complete',a.response_ms,'r']]){const b=node('div','rp-attbar');const f=node('i',cls);f.style.width=(v===null||v===undefined?0:Math.max(2,v/mx*100))+'%';b.append(node('span','',lab+' '+(v===null||v===undefined?'never':ms(v)+' ms')),f);bars.append(b);}
+        row.append(bars);sec.append(row);}
+      sec.append(node('p','muted','These times overlap; they are not added together.'));extra.append(sec);
+    }
+    if(r){const a=SIGHT.get(r.id);if(a&&a.log.length){const sec=node('section','rp-capbox');sec.append(node('h3','','Seen since you opened this page'));const ul=node('ul','rp-log');for(const l of a.log.slice(-8)){const lf=lifeOf[l.phase];ul.append(node('li','mono',new Date(l.at).toLocaleTimeString(undefined,{hour12:false})+' · '+(lf===undefined?l.phase:(lf+1)+' '+lifeStages[lf])+' · '+ioSummary(l.io||0)[0]+' · '+count(l.bytes)+' B'));}sec.append(ul,node('p','muted','Only changes the page noticed are listed, at most every 2 seconds.'));extra.append(sec);}}
+    if(m.kind==='completed'&&m.reached.length){const sec=node('section','rp-capbox');sec.append(node('h3','','All stages at a glance'));const tb=node('table','rp-tbl'),tbd=node('tbody');
+      for(let i=0;i<7;i++){const tr=node('tr',i===cur?'on':'');tr.append(node('td','mono',(i+1)+' '+lifeStages[i]),node('td','mono',m.first[i]===null?'not reached':'at '+ms(m.first[i])+' ms'),node('td','mono',m.first[i]!==null&&i<6?ms(m.sp.spent[i])+' ms':''),node('td','',stageFacts(e,i).slice(0,2).map(f=>f[1]).join(' · ')));tbd.append(tr);}
+      tb.append(tbd);sec.append(tb);extra.append(sec);}
+  }
+  setInterval(()=>{if(R.kind==='inflight'&&!$('replay-panel').hidden&&!document.hidden)paintReplay();},1000);
+  $('tab-completed').onclick=()=>{R.tab='completed';renderReplayList();};
+  $('tab-inflight').onclick=()=>{R.tab='inflight';renderReplayList();};
+  $('rp-search').addEventListener('input',renderReplayList);
+  $('replay-doc').append(docLink('/dashboard#replay','Replay'));
+  function showView(name){$('worker-panel').hidden=name!=='workers';$('requests-panel').hidden=name!=='requests';$('replay-panel').hidden=name!=='replay';document.querySelector('.metrics').hidden=name!=='requests';for(const [id,v] of [['show-requests','requests'],['show-workers','workers'],['show-replay','replay']])$(id).setAttribute('aria-pressed',String(name===v));if(name==='replay')openReplayPanel();else stopReplay();}
+  $('show-workers').onclick=()=>showView('workers');$('show-requests').onclick=()=>showView('requests');$('show-replay').onclick=()=>showView('replay');
   $('download').onclick=()=>{if(!state.detail)return;const url=URL.createObjectURL(new Blob([JSON.stringify(state.detail,null,2)],{type:'application/json'})),link=node('a');link.href=url;link.download='nginx-request-'+state.detail.id+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
   $('request-dialog').addEventListener('close',()=>{state.detailRequest++;if(!state.trigger?.isConnected)$('search').focus();});
   $('request-dialog').addEventListener('click',event=>{if(event.target!==$('request-dialog'))return;const rect=event.target.getBoundingClientRect();if(event.clientX<rect.left||event.clientX>rect.right||event.clientY<rect.top||event.clientY>rect.bottom)event.target.close();});
