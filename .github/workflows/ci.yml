@@ -11,10 +11,10 @@ jobs:
           python-version: '3.12'
       - run: python3 -m unittest discover -s tests -v
       - run: docker compose up --build --detach
-      - name: Wait for collector
+      - name: Wait for collector and proxy backend
         run: |
           for attempt in $(seq 1 60); do
-            if curl -fsS http://127.0.0.1:19877/health; then exit 0; fi
+            if curl -fsS http://127.0.0.1:19877/health && curl -fsS http://127.0.0.1:18080/; then exit 0; fi
             sleep 1
           done
           docker compose logs
