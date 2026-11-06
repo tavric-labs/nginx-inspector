@@ -268,22 +268,22 @@ kretprobe:inet_csk_accept /%s && @accepting[tid]/ {if(retval!=0){@aq[tid]=@queue
 		fmt.Fprintf(&b, `uprobe:%s:ngx_inspector_request_%s /%s/ { $fd=(int64)arg4;if($fd>=0 && $fd<16777216){if(!@gen[pid,$fd]){@gen[pid,$fd]=nsecs;}%s}}
 `, o.Module, marker, scope, emit("request_"+marker, `,\"request_id\":\"%llu-%llu-%llu-%llu\",\"request_number\":%llu`, `,arg0,arg1,arg2,arg3,arg5`))
 	}
-	b.WriteString(fmt.Sprintf(`tracepoint:syscalls:sys_enter_epoll_ctl /%s/ {if(args->op==1||args->op==3){@ctl_fd[tid]=args->fd;@ctl_ep[tid]=args->epfd;@ctl_data[tid]=*(uint64*)uptr((uint64)args->event+4);@ctl_flags[tid]=*(uint32*)uptr((uint64)args->event);@ctl[tid]=1;}}
+	b.WriteString(fmt.Sprintf(`tracepoint:syscalls:sys_enter_epoll_ctl /%s/ {if(args->op==1||args->op==3){@ctl_fd[tid]=(int64)args->fd;@ctl_ep[tid]=(int64)args->epfd;@ctl_data[tid]=*(uint64*)uptr((uint64)args->event+4);@ctl_flags[tid]=*(uint32*)uptr((uint64)args->event);@ctl[tid]=1;}}
 tracepoint:syscalls:sys_exit_epoll_ctl /%s && @ctl[tid]/ {if(args->ret==0){$fd=@ctl_fd[tid];@datafd[pid,@ctl_ep[tid],@ctl_data[tid]]=$fd+1;@datagen[pid,@ctl_ep[tid],@ctl_data[tid]]=@gen[pid,$fd];if(@gen[pid,$fd]){%s}}delete(@ctl[tid]);delete(@ctl_fd[tid]);delete(@ctl_ep[tid]);delete(@ctl_data[tid]);delete(@ctl_flags[tid]);}
 `, scope, scope, emit("register", `,\"flags\":%u`, `,@ctl_flags[tid]`)))
 	// x86_64 packed epoll events are 12 bytes; at most 32 events are inspected per
 	// syscall. Excess returned events remain outside this bounded observation.
 	for _, name := range []string{"epoll_wait", "epoll_pwait"} {
-		fmt.Fprintf(&b, `tracepoint:syscalls:sys_enter_%s /%s/ {@ep_ptr[tid]=(uint64)args->events;@ep_fd[tid]=args->epfd;}
+		fmt.Fprintf(&b, `tracepoint:syscalls:sys_enter_%s /%s/ {@ep_ptr[tid]=(uint64)args->events;@ep_fd[tid]=(int64)args->epfd;}
 tracepoint:syscalls:sys_exit_%s /%s/ {$i=0;unroll(32){if($i<args->ret){$ptr=@ep_ptr[tid]+12*$i;$data=*(uint64*)uptr($ptr+4);$f=@datafd[pid,@ep_fd[tid],$data];if($f){$fd=$f-1;if(@gen[pid,$fd] && @datagen[pid,@ep_fd[tid],$data]==@gen[pid,$fd]){%s}}}$i=$i+1;}delete(@ep_ptr[tid]);delete(@ep_fd[tid]);}
 `, name, scope, name, scope, emit("ready", `,\"flags\":%u`, `,*(uint32*)uptr($ptr)`))
 	}
 	for _, name := range []string{"read", "recvfrom"} {
-		fmt.Fprintf(&b, `tracepoint:syscalls:sys_enter_%s /%s/ {if(@gen[pid,args->fd]){@read_fd[tid]=args->fd;@read_at[tid]=nsecs;}}
+		fmt.Fprintf(&b, `tracepoint:syscalls:sys_enter_%s /%s/ {if(@gen[pid,(int64)args->fd]){@read_fd[tid]=(int64)args->fd;@read_at[tid]=nsecs;}}
 tracepoint:syscalls:sys_exit_%s /%s && @read_at[tid]/ {$fd=@read_fd[tid];if(args->ret>=0){%s}delete(@read_fd[tid]);delete(@read_at[tid]);}
 `, name, scope, name, scope, emit("read", `,\"duration_ns\":\"%llu\",\"bytes\":%lld`, `,nsecs-@read_at[tid],args->ret`))
 	}
-	fmt.Fprintf(&b, `tracepoint:syscalls:sys_enter_close /%s/ {$fd=args->fd;if(@gen[pid,$fd]){%s delete(@gen[pid,$fd]);}}
+	fmt.Fprintf(&b, `tracepoint:syscalls:sys_enter_close /%s/ {$fd=(int64)args->fd;if(@gen[pid,$fd]){%s delete(@gen[pid,$fd]);}}
 interval:s:%d { exit(); }
 END { clear(@syn);clear(@queued);clear(@synchild);clear(@gen);clear(@datafd);clear(@datagen);clear(@handoff_req);clear(@handoff_syn);clear(@aq);clear(@as);clear(@accepting);clear(@ctl);clear(@ctl_fd);clear(@ctl_ep);clear(@ctl_data);clear(@ctl_flags);clear(@ep_ptr);clear(@ep_fd);clear(@read_fd);clear(@read_at); }
 `, scope, emit("close", "", ""), int(o.Duration.Seconds()))
