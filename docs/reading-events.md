@@ -34,3 +34,20 @@ that request; missing attempts alone is not a universal proof of its cause.
 Null or absent values mean unavailable or unobserved. Do not interpret them as
 false, zero, or a successful execution. Old schema-1 history cannot be upgraded
 into native evidence after the fact.
+
+## Stage timeline {#stage-timeline}
+
+Inspect shows the seven request stages and when each was first reached, measured from the
+start of the request. Stages are Parsed, Rewrite, Access, Content, Headers, Body and
+Done; the hooks behind each are listed in [Workers](./workers.md#request-stages).
+
+For every stage the timeline shows the offset at which it was first reached and the time
+spent before the next observed stage. The longest stage is highlighted. A stage that is
+not reached is dimmed: for example a client that closed the connection before the
+backend answered never reaches Headers or Body.
+
+This is where time went inside nginx for that request. A request that reaches Headers at
+243,409 ms waited about four minutes for the backend's first byte; one that reaches Body
+at 4 ms and Done at 4 ms was answered at once. The timeline is built from the observed
+hook sequence, so it inherits its limits: at most 40 observations are kept and a missing
+hook is unknown, not zero.
