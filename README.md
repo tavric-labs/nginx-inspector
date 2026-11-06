@@ -43,6 +43,18 @@ This is bounded hook observation: it does not record every syscall or reconstruc
 every nginx decision. The [coverage guide](https://nginx-inspector.tavric-labs.net/coverage)
 explains what each observation can establish.
 
+## Observed resource use
+
+At 100% capture and about 1.3 completed events/s, a 60-second real-traffic sample recorded:
+
+| Component | Memory | CPU |
+| --- | --- | --- |
+| Go collector container | 11.53–14.62 MiB | 1.59% mean, 3.18% peak of one core |
+| Native selected-request context | 4.56 KiB fixed, plus bounded strings | Not separately isolated |
+
+These are workload-specific observations. See [resource measurements and limits](https://nginx-inspector.tavric-labs.net/resources)
+and [latency overhead](https://nginx-inspector.tavric-labs.net/performance) for the method and tradeoffs.
+
 ## Build and contribute
 
 ```sh

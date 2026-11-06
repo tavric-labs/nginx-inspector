@@ -47,3 +47,6 @@ Response-equivalence checks passed for every tested mode. These figures explain
 why new sessions default to 1% and full sampling is an explicit choice. They do
 not establish a production SLO or prove the same overhead on another workload.
 Old-history pruning controls storage; it does not remove instrumentation CPU cost.
+
+For measured collector CPU/memory and native allocation sizes, see
+[Inspector resource footprint](/resources).

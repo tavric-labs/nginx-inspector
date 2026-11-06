@@ -30,3 +30,12 @@ The inspector distinguishes **observed state**, **configured policy** and
 permitted is not proof of a syscall. Missing observations remain unknown.
 
 [Read the evidence →](/reading-events)
+
+## Measured footprint
+
+A one-minute real-traffic sample at full capture observed **11.53–14.62 MiB** of
+collector container memory and **1.59% mean CPU** of one core, at about 1.3 completed
+events per second. The native module adds a fixed **4.56 KiB per selected request**,
+plus bounded metadata. These figures depend on workload and concurrency.
+
+[Read the measurements, method and limits →](/resources)
