@@ -13,6 +13,7 @@ client ──► nginx worker ──► upstream
                     validate → bounded queue → SQLite WAL
                            │
                HTTP :19877 / embedded desktop viewer
+               + optional read-only proc worker sampler
                     loopback controls
                     optional read-only interface
 ```
@@ -52,3 +53,7 @@ The Go collector keeps the existing `events` SQLite table and accepts legacy
 schema 1 plus native schema 2. It does not invent missing native data for old rows.
 Schema 2 is closed: unknown fields/types and excessive observation arrays are rejected
 before persistence. Query portions are stripped again during validation.
+
+Worker telemetry uses a separate closed, 8 KiB bounded schema and in-memory snapshot
+cache. It is not written to request history. See [Workers](/workers) and
+[traffic behavior and overhead](/performance).

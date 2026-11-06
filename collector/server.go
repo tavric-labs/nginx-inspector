@@ -19,8 +19,8 @@ import (
 var page []byte
 
 type Config struct {
-	DB, ControlFile, ViewerHost                  string
-	UDPPort, HTTPPort, RetentionHours, MaxEvents int
+	DB, ControlFile, ViewerHost, ProcRoot, NginxPIDFile string
+	UDPPort, HTTPPort, RetentionHours, MaxEvents        int
 }
 type Server struct {
 	Store     *Store
@@ -32,10 +32,11 @@ type Server struct {
 	mu        sync.Mutex
 	stats     map[string]uint64
 	failure   bool
+	workers   *workerMonitor
 }
 
 func NewServer(c Config) (s *Server, err error) {
-	s = &Server{pending: make(chan Event, 2000), stats: map[string]uint64{}}
+	s = &Server{workers: newWorkerMonitor(c.ProcRoot, c.NginxPIDFile), pending: make(chan Event, 2000), stats: map[string]uint64{}}
 	defer func() {
 		if err != nil {
 			s.closeResources()
@@ -123,12 +124,12 @@ func (s *Server) handler(readonly bool, port int) http.Handler {
 				return
 			}
 			var p map[string]json.RawMessage
-			if err = json.Unmarshal(raw, &p); err != nil || p == nil || len(p) > 1 {
+			if err = json.Unmarshal(raw, &p); err != nil || p == nil || len(p) > 2 {
 				fail("invalid capture request", 400)
 				return
 			}
 			for k := range p {
-				if k != "seconds" {
+				if k != "seconds" && k != "sample_permyriad" {
 					fail("invalid capture request", 400)
 					return
 				}
@@ -144,7 +145,14 @@ func (s *Server) handler(readonly bool, port int) http.Handler {
 					}
 					seconds = &n
 				}
-				v, err := s.Control.Start(seconds)
+				sample := 100
+				if raw, ok := p["sample_permyriad"]; ok {
+					if err := json.Unmarshal(raw, &sample); err != nil {
+						fail("invalid sample", 400)
+						return
+					}
+				}
+				v, err := s.Control.StartSample(seconds, sample)
 				if err != nil {
 					fail(err.Error(), 400)
 					return
@@ -155,7 +163,9 @@ func (s *Server) handler(readonly bool, port int) http.Handler {
 					fail("invalid capture request", 400)
 					return
 				}
-				reply(s.Control.Stop(), 200)
+				state := s.Control.Stop()
+				s.workers.clear()
+				reply(state, 200)
 			default:
 				fail("not found", 404)
 			}
@@ -172,6 +182,8 @@ func (s *Server) handler(readonly bool, port int) http.Handler {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.Write(page)
 			return
+		case "/api/workers":
+			v = s.workers.snapshot(s.Control.Status().Active)
 		case "/api/capture":
 			v = s.Control.Status()
 		case "/health":
@@ -225,9 +237,29 @@ func (s *Server) receive(ctx context.Context) {
 			s.inc("inactive_dropped", 1)
 			continue
 		}
+		var envelope struct {
+			Kind string `json:"kind"`
+		}
+		if json.Unmarshal(buf[:n], &envelope) == nil && envelope.Kind == "worker" {
+			worker, err := ValidateWorker(buf[:n])
+			if err != nil {
+				s.inc("invalid_worker", 1)
+			} else {
+				if s.workers.observe(worker) {
+					s.inc("worker_received", 1)
+				} else {
+					s.inc("worker_scope_dropped", 1)
+				}
+			}
+			continue
+		}
 		v, err := Validate(buf[:n])
 		if err != nil {
 			s.inc("invalid", 1)
+			continue
+		}
+		if !s.workers.accepts(v) {
+			s.inc("scope_dropped", 1)
 			continue
 		}
 		select {
@@ -271,7 +303,8 @@ func (s *Server) Run(ctx context.Context) error {
 	defer cancel()
 	defer s.closeResources()
 	var wg sync.WaitGroup
-	wg.Add(2)
+	wg.Add(3)
+	go func() { defer wg.Done(); s.workers.run(ctx) }()
 	go func() { defer wg.Done(); s.receive(ctx) }()
 	go func() { defer wg.Done(); s.persist() }()
 	errs := make(chan error, len(s.servers))

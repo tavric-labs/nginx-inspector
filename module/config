@@ -1,6 +1,9 @@
 ngx_addon_name=ngx_http_inspector_module
 ngx_module_type=HTTP
-ngx_module_name=ngx_http_inspector_module
+ngx_module_name=${NGINX_INSPECTOR_MODULE_NAME:-ngx_http_inspector_v2_module}
+case "$ngx_module_name" in ngx_http_inspector_*_module) ;; *) echo "invalid inspector module name" >&2; exit 1;; esac
+case "$ngx_module_name" in *[!a-zA-Z0-9_]*) echo "invalid inspector module identifier" >&2; exit 1;; esac
+CFLAGS="$CFLAGS -DNGINX_INSPECTOR_MODULE=$ngx_module_name"
 ngx_module_srcs="$ngx_addon_dir/ngx_http_inspector_module.c"
 ngx_module_deps="$ngx_addon_dir/inspector_native_json.h"
 . auto/module

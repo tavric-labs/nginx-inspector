@@ -14,6 +14,9 @@ nginx-inspector status
 nginx-inspector start --for 10m
 ```
 
+The default is 1% sampling. For a short deliberate full trace, use
+`nginx-inspector start --sample 100 --for 30s`.
+
 Send traffic through your existing nginx listener. Open **http://127.0.0.1:19877/**,
 select a request, and press **Inspect**. Start with the routing card and hook
 sequence; then inspect upstream attempts, policies and buffers.

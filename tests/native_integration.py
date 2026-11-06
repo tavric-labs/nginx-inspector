@@ -1,4 +1,5 @@
 """Exercise native nginx internals against the isolated dev/canary configuration."""
+import concurrent.futures
 import gzip
 import http.client
 import json
@@ -35,7 +36,7 @@ def latest(path):
     raise AssertionError('native event did not arrive for ' + path)
 
 
-api('/api/capture/start', {'seconds': 60})
+api('/api/capture/start', {'seconds': 60,'sample_permyriad':10000})
 try:
     assert call('/retry')[0] == 200
     retry = latest('/retry')
@@ -101,6 +102,26 @@ try:
         time.sleep(.1)
     assert rate and rate[0]['native']['policy']['rate_limit_status'] == 'REJECTED', rate
     assert not rate[0]['native']['attempts']
+
+    assert len(call('/bandwidth')[2]) == 12288
+    bandwidth = latest('/bandwidth')['native']['policy']
+    assert bandwidth['limit_rate_bps'] == 8192 and bandwidth['limit_rate_after_bytes'] == 1024, bandwidth
+
+    with concurrent.futures.ThreadPoolExecutor() as pool:
+        pending = pool.submit(call, '/worker-wait?token=worker-query-secret')
+        for _ in range(60):
+            workers = api('/api/workers')
+            live = [request for worker in workers['live_workers'] for request in worker['requests']]
+            if any(request['path'] == '/worker-wait' for request in live):
+                break
+            time.sleep(.05)
+        else:
+            raise AssertionError('no bounded live worker request observation')
+        assert workers['available'] and workers['scoped']
+        assert any(w['connection_slots_capacity'] > 0 and w['client_connections']['active'] >= 1 for w in workers['live_workers'])
+        assert any(p['role'] == 'worker' and p['rss_bytes'] > 0 for p in workers['processes'])
+        assert 'worker-query-secret' not in json.dumps(workers)
+        assert pending.result()[0] == 200
 
     trace = retry['native']['trace']
     assert trace[-1]['event'] == 'log'

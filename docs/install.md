@@ -27,6 +27,10 @@ Inspect `nginx -V` and use your distribution's matching development headers.
 make -f objs/Makefile modules
 ```
 
+The current source produces `objs/ngx_http_inspector_v2_module.so`. Install it
+at a versioned path and use that path in `load_module` when upgrading an existing
+loaded generation. The generic path below is suitable for a first installation.
+
 Run those commands in the matching nginx source tree, preserving the relevant
 options from your installed nginx. Ubuntu's patched packages require matching
 Ubuntu source/headers, not an upstream tarball with the same version number.

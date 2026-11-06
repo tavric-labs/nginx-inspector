@@ -122,7 +122,9 @@
       "postpone_output_bytes": "int",
       "resolver_timeout_ms": "int",
       "lingering_timeout_ms": "int",
-      "lingering_time_ms": "int"
+      "lingering_time_ms": "int",
+      "limit_rate_bps": "int",
+      "limit_rate_after_bytes": "int"
     },
     "limits": {
       "trace_cap": "int",

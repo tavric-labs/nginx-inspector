@@ -1,0 +1,265 @@
+package collector
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+)
+
+type LiveRequest struct {
+	ID            string `json:"id"`
+	Method        string `json:"method"`
+	Path          string `json:"path"`
+	Phase         string `json:"phase"`
+	Elapsed       int64  `json:"elapsed_ms"`
+	IO            uint32 `json:"io"`
+	Status        int    `json:"status"`
+	ResponseBytes int64  `json:"response_bytes"`
+}
+type ClientConnections struct {
+	Active  int64 `json:"active"`
+	Reading int64 `json:"reading"`
+	Writing int64 `json:"writing"`
+	Waiting int64 `json:"waiting"`
+}
+
+type WorkerTraffic struct {
+	SlotsUsed     int64              `json:"connection_slots_used"`
+	SlotsCapacity int64              `json:"connection_slots_capacity"`
+	Connections   *ClientConnections `json:"client_connections"`
+	Schema        int                `json:"schema"`
+	Kind          string             `json:"kind"`
+	PID           int                `json:"worker_pid"`
+	Master        int                `json:"master_pid"`
+	At            int64              `json:"at_ms"`
+	Inflight      int64              `json:"sampled_inflight"`
+	Omitted       int64              `json:"omitted"`
+	Requests      []LiveRequest      `json:"requests"`
+	received      time.Time
+}
+
+func ValidateWorker(raw []byte) (WorkerTraffic, error) {
+	var w WorkerTraffic
+	if len(raw) > 8192 {
+		return w, fmt.Errorf("worker payload too large")
+	}
+	d := json.NewDecoder(bytes.NewReader(raw))
+	d.DisallowUnknownFields()
+	if e := d.Decode(&w); e != nil {
+		return w, e
+	}
+	if d.Decode(new(any)) != io.EOF {
+		return w, fmt.Errorf("trailing JSON")
+	}
+	delta := w.At - time.Now().UnixMilli()
+	if w.SlotsUsed < 0 || w.SlotsCapacity < 0 || w.SlotsUsed > w.SlotsCapacity || w.Schema != 1 || w.Kind != "worker" || w.PID <= 0 || w.Master <= 0 || w.Inflight < 0 || w.Omitted < 0 || w.Inflight != int64(len(w.Requests))+w.Omitted || len(w.Requests) > 8 || delta < -10000 || delta > 10000 {
+		return w, fmt.Errorf("invalid worker snapshot")
+	}
+	if w.Connections != nil && (w.Connections.Active < 0 || w.Connections.Reading < 0 || w.Connections.Writing < 0 || w.Connections.Waiting < 0) {
+		return w, fmt.Errorf("invalid client counters")
+	}
+	for i := range w.Requests {
+		r := &w.Requests[i]
+		if !idPattern.MatchString(r.ID) || len(r.Path) > 256 || len(r.Method) > 32 || !contains(spec.Trace, r.Phase) || r.Elapsed < 0 || r.ResponseBytes < 0 || (r.Status != 0 && (r.Status < 100 || r.Status > 599)) {
+			return w, fmt.Errorf("invalid live request")
+		}
+		r.Path = strings.SplitN(r.Path, "?", 2)[0]
+	}
+	w.received = time.Now()
+	return w, nil
+}
+
+type WorkerProcess struct {
+	PID       int            `json:"pid"`
+	Parent    int            `json:"parent_pid"`
+	Role      string         `json:"role"`
+	State     string         `json:"state"`
+	Threads   int64          `json:"threads"`
+	RSS       *int64         `json:"rss_bytes"`
+	Anonymous *int64         `json:"anonymous_bytes"`
+	File      *int64         `json:"file_bytes"`
+	Shared    *int64         `json:"shared_bytes"`
+	Virtual   int64          `json:"virtual_bytes"`
+	CPU       *float64       `json:"cpu_percent"`
+	Traffic   *WorkerTraffic `json:"traffic"`
+	ticks     int64
+	start     string
+}
+type WorkerView struct {
+	MasterPID     int             `json:"master_pid"`
+	Available     bool            `json:"available"`
+	Error         string          `json:"error,omitempty"`
+	At            int64           `json:"sampled_ms"`
+	ScanLimited   bool            `json:"scan_limited"`
+	Scoped        bool            `json:"scoped"`
+	Processes     []WorkerProcess `json:"processes"`
+	LiveWorkers   []WorkerTraffic `json:"live_workers"`
+	CaptureActive bool            `json:"capture_active"`
+}
+type workerMonitor struct {
+	mu            sync.Mutex
+	root, pidfile string
+	view          WorkerView
+	previous      map[int]WorkerProcess
+	previousAt    time.Time
+	traffic       map[int]WorkerTraffic
+	clockTicks    float64
+}
+
+func newWorkerMonitor(root, pidfile string) *workerMonitor {
+	return &workerMonitor{root: root, pidfile: pidfile, previous: map[int]WorkerProcess{}, traffic: map[int]WorkerTraffic{}, clockTicks: processClockTicks()}
+}
+func (w *workerMonitor) observe(v WorkerTraffic) bool {
+	if !w.matchesMaster(v.Master) {
+		return false
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if len(w.traffic) >= 256 {
+		for pid, v := range w.traffic {
+			if time.Since(v.received) > 5*time.Second {
+				delete(w.traffic, pid)
+			}
+		}
+	}
+	if len(w.traffic) < 256 {
+		w.traffic[v.PID] = v
+		return true
+	}
+	return false
+}
+func (w *workerMonitor) clear() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.traffic = map[int]WorkerTraffic{}
+}
+
+func (w *workerMonitor) snapshot(active bool) WorkerView {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	v := w.view
+	v.Processes = append([]WorkerProcess{}, v.Processes...)
+	v.LiveWorkers = []WorkerTraffic{}
+	v.CaptureActive = active
+	if active {
+		for _, t := range w.traffic {
+			if time.Since(t.received) <= 4*time.Second {
+				allowed := !v.Scoped
+				for _, p := range v.Processes {
+					if p.PID == t.PID {
+						allowed = true
+						break
+					}
+				}
+				if !allowed {
+					continue
+				}
+				v.LiveWorkers = append(v.LiveWorkers, t)
+			}
+		}
+		for i := range v.Processes {
+			if t, ok := w.traffic[v.Processes[i].PID]; ok && time.Since(t.received) <= 4*time.Second {
+				copy := t
+				v.Processes[i].Traffic = &copy
+			}
+		}
+	}
+	return v
+}
+func (w *workerMonitor) sample() {
+	view := readWorkerProcesses(w.root, w.pidfile)
+	now := time.Now()
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	for pid, t := range w.traffic {
+		if time.Since(t.received) > 4*time.Second {
+			delete(w.traffic, pid)
+		}
+	}
+	next := map[int]WorkerProcess{}
+	for i := range view.Processes {
+		p := &view.Processes[i]
+		if old, ok := w.previous[p.PID]; ok && old.start == p.start && p.ticks >= old.ticks && w.clockTicks > 0 && !w.previousAt.IsZero() {
+			pct := 100 * float64(p.ticks-old.ticks) / w.clockTicks / now.Sub(w.previousAt).Seconds()
+			p.CPU = &pct
+		}
+		next[p.PID] = *p
+	}
+	w.previous = next
+	w.previousAt = now
+	view.At = now.UnixMilli()
+	w.view = view
+}
+func (w *workerMonitor) run(ctx context.Context) {
+	w.sample()
+	t := time.NewTicker(2 * time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			w.sample()
+		}
+	}
+}
+
+func (w *workerMonitor) matchesMaster(claim int) bool {
+	if w.pidfile == "" {
+		return true
+	}
+	w.mu.Lock()
+	cached := w.view.MasterPID
+	w.mu.Unlock()
+	if claim > 0 && claim == cached {
+		return true
+	}
+	f, e := os.Open(w.pidfile)
+	if e != nil {
+		return false
+	}
+	defer f.Close()
+	b, e := io.ReadAll(io.LimitReader(f, 32))
+	if e != nil {
+		return false
+	}
+	pid, e := strconv.Atoi(strings.TrimSpace(string(b)))
+	if e != nil || pid <= 0 || pid != claim {
+		return false
+	}
+	w.mu.Lock()
+	w.view.MasterPID = pid
+	w.view.Scoped = true
+	w.mu.Unlock()
+	return true
+}
+func (w *workerMonitor) accepts(e Event) bool {
+	if w.pidfile == "" {
+		return true
+	}
+	if native, ok := e["native"].(map[string]any); ok {
+		nginx, _ := native["nginx"].(map[string]any)
+		master, ok := integer(nginx["master_pid"])
+		return ok && w.matchesMaster(int(master))
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	id, _ := e["id"].(string)
+	pid, err := strconv.Atoi(strings.SplitN(id, "-", 2)[0])
+	if err != nil {
+		return false
+	}
+	for _, p := range w.view.Processes {
+		if p.PID == pid && (p.Role == "worker" || p.Role == "draining worker") {
+			return true
+		}
+	}
+	return false
+}

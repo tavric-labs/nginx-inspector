@@ -4,6 +4,10 @@
 #include <sys/mman.h>
 #include <stdint.h>
 
+#ifndef NGINX_INSPECTOR_MODULE
+#define NGINX_INSPECTOR_MODULE ngx_http_inspector_v2_module
+#endif
+
 #define INSPECTOR_TRACE_MAX 40
 #define INSPECTOR_SUB_MAX 8
 #define INSPECTOR_ATTEMPT_MAX 8
@@ -42,7 +46,8 @@ typedef struct {
     ngx_str_t control_path;
 } inspector_conf;
 
-typedef struct {
+typedef struct inspector_ctx_s inspector_ctx;
+struct inspector_ctx_s {
     ngx_msec_t start_mono;
     ngx_msec_t post_read, rewrite, access, content, header, body;
     ngx_uint_t rewrites;
@@ -59,8 +64,10 @@ typedef struct {
     ngx_uint_t request_buffered_seen, connection_buffered_seen, cached_peer_seen, request_spool_seen;
     ngx_msec_t request_body_first, request_body_last, body_last;
     ngx_int_t body_result, header_result;
-    ngx_uint_t last_io;
-} inspector_ctx;
+    ngx_uint_t last_io, last_event;
+    ngx_http_request_t *request;
+    inspector_ctx *live_next, *live_previous;
+};
 
 typedef struct { u_char *p, *end; ngx_flag_t full; } writer;
 static ngx_int_t inspector_init(ngx_conf_t *cf);
@@ -78,7 +85,11 @@ static ngx_int_t limit_req_index = NGX_ERROR, limit_conn_index = NGX_ERROR;
 static ngx_str_t control_path;
 static volatile uint64_t *capture_deadline;
 static ngx_uint_t request_serial, worker_connection_limit, configured_workers;
-extern ngx_module_t ngx_http_inspector_module;
+static inspector_ctx *live_requests;
+static ngx_uint_t live_count, telemetry_port;
+static ngx_event_t worker_timer;
+static void worker_snapshot(ngx_event_t *event);
+extern ngx_module_t NGINX_INSPECTOR_MODULE;
 
 static ngx_command_t commands[] = {
     { ngx_string("inspector"), NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_FLAG,
@@ -94,17 +105,25 @@ static ngx_command_t commands[] = {
 static ngx_http_module_t module_ctx = {
     NULL, inspector_init, NULL, NULL, NULL, NULL, inspector_create, inspector_merge
 };
-ngx_module_t ngx_http_inspector_module = {
+ngx_module_t NGINX_INSPECTOR_MODULE = {
     NGX_MODULE_V1, &module_ctx, commands, NGX_HTTP_MODULE,
     NULL, NULL, inspector_worker, NULL, NULL, inspector_exit, NULL, NGX_MODULE_V1_PADDING
 };
 
-static void cleanup(void *data) { (void) data; }
+static void cleanup(void *data) {
+    inspector_ctx *c = data;
+    if (!c->request) return;
+    if (c->live_previous) c->live_previous->live_next = c->live_next;
+    else live_requests = c->live_next;
+    if (c->live_next) c->live_next->live_previous = c->live_previous;
+    if (live_count) live_count--;
+    c->request = NULL;
+}
 
 static ngx_flag_t capture_active(void) {
     uint64_t deadline, now;
     if (capture_deadline == NULL) return 0;
-    deadline = __atomic_load_n(capture_deadline, __ATOMIC_ACQUIRE);
+    deadline = __atomic_load_n(capture_deadline, __ATOMIC_ACQUIRE) & UINT64_C(0x0000ffffffffffff);
     now = (uint64_t) ngx_current_msec;
     /* Reject stale or corrupt values; collector renews a 1.5-second lease. */
     return deadline > now && deadline - now <= 2000;
@@ -155,32 +174,43 @@ static inspector_ctx *context(ngx_http_request_t *r, ngx_flag_t create) {
     inspector_conf *cf;
     ngx_time_t *now;
     if (!capture_active()) return NULL;
-    ctx = ngx_http_get_module_ctx(r->main, ngx_http_inspector_module);
-    if (ctx) return ctx;
+    ctx = ngx_http_get_module_ctx(r->main, NGINX_INSPECTOR_MODULE);
+    if (ctx) {
+        cf = ngx_http_get_module_loc_conf(r, NGINX_INSPECTOR_MODULE);
+        if (!cf->enabled) {
+            if (r == r->main) { cleanup(ctx); ctx->selected = 0; }
+            return NULL;
+        }
+        return ctx;
+    }
     for (cl = r->main->pool->cleanup; cl; cl = cl->next) {
         if (cl->handler == cleanup) {
-            ngx_http_set_ctx(r->main, cl->data, ngx_http_inspector_module);
+            ngx_http_set_ctx(r->main, cl->data, NGINX_INSPECTOR_MODULE);
             return cl->data;
         }
     }
     if (!create || r != r->main) return NULL;
-    cf = ngx_http_get_module_loc_conf(r, ngx_http_inspector_module);
+    cf = ngx_http_get_module_loc_conf(r, NGINX_INSPECTOR_MODULE);
     if (!cf->enabled) return NULL;
     cl = ngx_pool_cleanup_add(r->main->pool, sizeof(inspector_ctx));
     if (cl == NULL) return NULL;
     cl->handler = cleanup;
     ctx = cl->data;
-    ngx_http_set_ctx(r->main, ctx, ngx_http_inspector_module);
+    ngx_http_set_ctx(r->main, ctx, NGINX_INSPECTOR_MODULE);
     ngx_memzero(ctx, sizeof(*ctx));
     now = ngx_timeofday();
     ctx->start_mono = ngx_current_msec - (ngx_msec_t)
         ((now->sec - r->start_sec) * 1000 + now->msec - r->start_msec);
-    ctx->selected = ((ngx_uint_t) ngx_random() % 10000) < cf->sample;
+    ctx->sample = (ngx_uint_t) (__atomic_load_n(capture_deadline, __ATOMIC_ACQUIRE) >> 48);
+    if (ctx->sample == 0 || ctx->sample > cf->sample) ctx->sample = cf->sample;
+    ctx->selected = ((ngx_uint_t) ngx_random() % 10000) < ctx->sample;
     ctx->serial = ++request_serial;
     ctx->connection_requests = r->connection->requests;
-    ctx->sample = cf->sample;
     ctx->declared_body_bytes = r->headers_in.content_length_n;
     if (ctx->selected) {
+        ctx->request = r; ctx->live_next = live_requests;
+        if (live_requests) live_requests->live_previous = ctx;
+        live_requests = ctx; live_count++;
         ctx->trace = ngx_pcalloc(r->pool, INSPECTOR_TRACE_MAX * sizeof(inspector_observation));
         ctx->subs = ngx_pcalloc(r->pool, INSPECTOR_SUB_MAX * sizeof(inspector_subrequest));
         ctx->initial_path = clipped_string(r->pool, r->uri, 256);
@@ -202,6 +232,7 @@ static void observe(inspector_ctx *c, ngx_http_request_t *r, ngx_uint_t event, n
     ngx_http_core_loc_conf_t *location;
     ngx_uint_t i, sub = 0;
     if (!c || !c->selected) return;
+    c->last_event = event;
     if (r != r->main) {
         for (i = 0; i < c->sub_count; i++) if (c->subs[i].request == r) { s = &c->subs[i]; sub = i + 1; break; }
         if (!s) {
@@ -385,7 +416,7 @@ static void phase(writer *w, ngx_msec_t t, ngx_msec_t start) {
 #include "inspector_native_json.h"
 static ngx_int_t log_request(ngx_http_request_t *r) {
     inspector_ctx *c = context(r, 0);
-    inspector_conf *cf = ngx_http_get_module_loc_conf(r, ngx_http_inspector_module);
+    inspector_conf *cf = ngx_http_get_module_loc_conf(r, NGINX_INSPECTOR_MODULE);
     struct sockaddr_in dst;
     u_char buf[INSPECTOR_PAYLOAD_MAX];
     writer w;
@@ -438,6 +469,55 @@ static ngx_int_t log_request(ngx_http_request_t *r) {
     if (n == w.p - buf) sent_events++; else dropped_events++;
     return NGX_OK;
 }
+static void worker_snapshot(ngx_event_t *event) {
+    u_char buf[8192];
+    writer w;
+    inspector_ctx *c;
+    ngx_http_request_t *r;
+    ngx_uint_t count = 0;
+    struct sockaddr_in dst;
+    ngx_time_t *now;
+    if (capture_active() && event_socket >= 0) {
+        w.p = buf; w.end = buf + sizeof(buf); w.full = 0;
+        now = ngx_timeofday();
+        literal(&w, "{\"schema\":1,\"kind\":\"worker\",\"worker_pid\":"); number(&w, ngx_pid);
+        literal(&w, ",\"master_pid\":"); number(&w, ngx_parent);
+        literal(&w, ",\"at_ms\":"); number(&w, (int64_t) now->sec * 1000 + now->msec);
+        literal(&w, ",\"connection_slots_used\":"); number(&w, ngx_cycle->connection_n - ngx_cycle->free_connection_n);
+        literal(&w, ",\"connection_slots_capacity\":"); number(&w, ngx_cycle->connection_n);
+#if (NGX_STAT_STUB)
+        literal(&w, ",\"client_connections\":{\"active\":"); number(&w, *ngx_stat_active);
+        literal(&w, ",\"reading\":"); number(&w, *ngx_stat_reading);
+        literal(&w, ",\"writing\":"); number(&w, *ngx_stat_writing);
+        literal(&w, ",\"waiting\":"); number(&w, *ngx_stat_waiting); literal(&w, "}");
+#endif
+        literal(&w, ",\"sampled_inflight\":"); number(&w, live_count);
+        literal(&w, ",\"omitted\":"); number(&w, live_count > 8 ? live_count - 8 : 0);
+        literal(&w, ",\"requests\":[");
+        for (c = live_requests; c && count < 8; c = c->live_next) {
+            r = c->request;
+            if (count++) literal(&w, ",");
+            literal(&w, "{\"id\":\""); number(&w, ngx_pid); literal(&w, "-"); number(&w, c->serial);
+            literal(&w, "-"); number(&w, r->connection->number); literal(&w, "-"); number(&w, (int64_t) r->start_sec * 1000 + r->start_msec);
+            literal(&w, "\",\"method\":"); string(&w, r->method_name.data, r->method_name.len);
+            literal(&w, ",\"path\":"); string(&w, r->uri.data, ngx_min(r->uri.len, 128));
+            literal(&w, ",\"phase\":"); string(&w, (u_char *) observation_names[c->last_event], ngx_strlen(observation_names[c->last_event]));
+            literal(&w, ",\"elapsed_ms\":"); number(&w, ngx_current_msec - c->start_mono);
+            literal(&w, ",\"io\":"); number(&w, io_state(r));
+            literal(&w, ",\"status\":"); number(&w, r->headers_out.status ? r->headers_out.status : r->err_status);
+            literal(&w, ",\"response_bytes\":"); number(&w, c->body_bytes);
+            literal(&w, "}");
+        }
+        literal(&w, "]}");
+        if (!w.full) {
+            ngx_memzero(&dst, sizeof(dst)); dst.sin_family = AF_INET;
+            dst.sin_port = htons((in_port_t) telemetry_port); dst.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+            (void) sendto(event_socket, buf, w.p - buf, MSG_DONTWAIT, (struct sockaddr *) &dst, sizeof(dst));
+        }
+    }
+    ngx_add_timer(event, 1000);
+}
+
 static ngx_int_t add_phase(ngx_conf_t *cf, ngx_uint_t phase_id, ngx_http_handler_pt fn) {
     ngx_http_core_main_conf_t *cm = ngx_http_conf_get_module_main_conf(cf, ngx_http_core_module);
     ngx_http_handler_pt *h = ngx_array_push(&cm->phases[phase_id].handlers);
@@ -445,7 +525,7 @@ static ngx_int_t add_phase(ngx_conf_t *cf, ngx_uint_t phase_id, ngx_http_handler
     *h = fn; return NGX_OK;
 }
 static ngx_int_t inspector_init(ngx_conf_t *cf) {
-    inspector_conf *conf = ngx_http_conf_get_module_loc_conf(cf, ngx_http_inspector_module);
+    inspector_conf *conf = ngx_http_conf_get_module_loc_conf(cf, NGINX_INSPECTOR_MODULE);
     ngx_http_core_main_conf_t *main_conf = ngx_http_conf_get_module_main_conf(cf, ngx_http_core_module);
     ngx_hash_key_t *keys = main_conf->variables_keys->keys.elts;
     ngx_str_t names[] = { ngx_string("gzip_ratio"), ngx_string("limit_req_status"), ngx_string("limit_conn_status") };
@@ -463,6 +543,7 @@ static ngx_int_t inspector_init(ngx_conf_t *cf) {
         }
     }
     control_path = conf->control_path;
+    telemetry_port = conf->port;
     if (add_phase(cf, NGX_HTTP_POST_READ_PHASE, post_read) != NGX_OK
         || add_phase(cf, NGX_HTTP_SERVER_REWRITE_PHASE, server_rewrite) != NGX_OK
         || add_phase(cf, NGX_HTTP_REWRITE_PHASE, rewrite) != NGX_OK
@@ -521,10 +602,17 @@ static ngx_int_t inspector_worker(ngx_cycle_t *cycle) {
         event_socket = -1;
         ngx_log_error(NGX_LOG_WARN, cycle->log, ngx_errno, "inspector transport unavailable; requests continue");
     }
+    if (ngx_process == NGX_PROCESS_WORKER || ngx_process == NGX_PROCESS_SINGLE) {
+        ngx_memzero(&worker_timer, sizeof(worker_timer));
+        worker_timer.handler = worker_snapshot; worker_timer.log = cycle->log;
+        worker_timer.cancelable = 1;
+        ngx_add_timer(&worker_timer, 1000);
+    }
     return NGX_OK;
 }
 static void inspector_exit(ngx_cycle_t *cycle) {
     ngx_log_error(NGX_LOG_NOTICE, cycle->log, 0, "inspector sent=%ui dropped=%ui", sent_events, dropped_events);
+    if (worker_timer.timer_set) ngx_del_timer(&worker_timer);
     if (event_socket >= 0) close(event_socket);
     if (capture_deadline != NULL) munmap((void *) capture_deadline, 8);
 }

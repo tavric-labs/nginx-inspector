@@ -24,7 +24,7 @@ paths required by the service. `deploy/Dockerfile` provides a compiled runtime i
 1. Stop capture and confirm inactive state.
 2. Back up the database consistently with SQLite's backup API or a stopped collector.
 3. Save the current executable, module and exact nginx config for rollback.
-4. Replace the module atomically; never truncate a mapped shared object.
+4. Install the module at an immutable versioned path and update its `load_module` directive. Never truncate a mapped shared object or assume replacing a same-path `.so` activates new code.
 5. Run `nginx -t` before reload. Reload only nginx through the normal service manager.
 6. Start the new collector with the same data/control mounts; it starts OFF.
 7. Check `/health`, normal nginx traffic, and a short capture, then stop capture.
@@ -38,3 +38,13 @@ traffic and captures are verified.
 This manual uses the shared Tavric Labs documentation host. CI builds immutable
 site artifacts and publishes through a per-site forced-command SSH key. Deployment
 switches the site's current symlink atomically and verifies the public HTTPS revision.
+
+A new module generation uses a distinct exported module symbol to avoid symbol
+interposition with a still-loaded generation. Verify a fresh captured event from the
+new worker generation; a successful signal command alone is not activation proof.
+See the [dynamic-module engineering article](https://blog.nginx.org/blog/nginx-dynamic-modules-how-they-work).
+
+For a later C-module generation, build with a new identifier, for example
+`NGINX_INSPECTOR_MODULE_NAME=ngx_http_inspector_r20261106_module ./configure ...`.
+Use the resulting versioned shared object in `load_module`. This avoids reusing
+the exported symbol of a still-loaded generation.

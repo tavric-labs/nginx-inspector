@@ -24,7 +24,7 @@ def events():
 
 
 request = urllib.request.Request(API_URL + '/api/capture/start',
-                                 b'{"seconds":30}', {'Content-Type': 'application/json'})
+                                 b'{"seconds":30,"sample_permyriad":10000}', {'Content-Type': 'application/json'})
 with urllib.request.urlopen(request, timeout=5) as response:
     assert json.load(response)['active']
 

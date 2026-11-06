@@ -17,7 +17,7 @@ def stop(*_):
 
 for sig in (signal.SIGINT, signal.SIGTERM):
     signal.signal(sig, stop)
-for command in (['/app/nginx-inspector', 'serve', '--db', '/data/inspector.sqlite3', '--control-file', '/data/control'],
+for command in (['/app/nginx-inspector', 'serve', '--db', '/data/inspector.sqlite3', '--control-file', '/data/control', '--proc-root', '/proc', '--nginx-pid-file', '/tmp/inspector-nginx.pid'],
                 [sys.executable, 'dev/backend.py'],
                 ['/opt/nginx/sbin/nginx', '-c', '/app/dev/nginx.conf', '-g', 'daemon off;']):
     processes.append(subprocess.Popen(command))

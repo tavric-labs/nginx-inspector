@@ -156,6 +156,8 @@ static void native_json(writer *w, ngx_http_request_t *r, inspector_ctx *c) {
     integer_field(w, "client_body_timeout_ms", location->client_body_timeout);
     integer_field(w, "client_send_timeout_ms", location->send_timeout);
     integer_field(w, "client_keepalive_timeout_ms", location->keepalive_timeout);
+    key(w, "limit_rate_bps"); if (r->limit_rate_set) number(w, r->limit_rate); else literal(w, "null");
+    key(w, "limit_rate_after_bytes"); if (r->limit_rate_after_set) number(w, r->limit_rate_after); else literal(w, "null");
     key(w, "rate_limit_status"); optional_variable(w, r, limit_req_index);
     key(w, "connection_limit_status"); optional_variable(w, r, limit_conn_index);
     key(w, "access_satisfy"); literal(w, location->satisfy == NGX_HTTP_SATISFY_ANY ? "\"any\"" : "\"all\"");

@@ -15,7 +15,8 @@ export default defineDocsConfig({
     { text: 'OPERATIONS MANUAL', items: [
       { text: 'Overview', link: '/overview' }, { text: 'Installation', link: '/install' },
       { text: 'First capture', link: '/quick-start' }, { text: 'Capture control', link: '/capture' },
-      { text: 'Desktop inspector', link: '/dashboard' }
+      { text: 'Desktop inspector', link: '/dashboard' }, { text: 'Workers and concurrency', link: '/workers' },
+      { text: 'Proxy, cache and controls', link: '/traffic-controls' }, { text: 'Traffic and overhead', link: '/performance' }
     ]},
     { text: 'NGINX INTERNALS', items: [
       { text: 'The nginx engine', link: '/nginx-engine' },

@@ -19,6 +19,7 @@ docker compose up --build --detach
 python3 tests/integration.py
 python3 tests/native_integration.py
 python3 tests/on_demand.py
+python3 tests/equivalence.py
 npm ci
 npx playwright install chromium
 npm run test:viewer
@@ -27,7 +28,7 @@ docker compose down
 
 The native integration fixture exercises retries, buffering overrides, cache
 MISS/HIT, gzip, file output, auth subrequests, upload spooling and local body-limit
-rejection. The on-demand suite checks inactive capture and timed stop. The browser
+rejection, bandwidth limiting and live worker/resource snapshots. The on-demand suite checks inactive capture and timed stop. The browser
 suite checks filtering, a visible Inspect dialog, JSON download and missing-event errors.
 
 ## Documentation

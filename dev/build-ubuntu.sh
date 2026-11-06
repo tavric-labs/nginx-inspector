@@ -13,10 +13,10 @@ fi
 cd /workspace/build/nginx-src
 ./configure --with-compat --with-debug --with-http_ssl_module --with-http_v2_module --with-http_stub_status_module --with-http_auth_request_module --with-threads --add-dynamic-module=/workspace/module
 make -f objs/Makefile modules -j2
-cp objs/ngx_http_inspector_module.so /workspace/build/
+cp objs/ngx_http_inspector_v2_module.so /workspace/build/ngx_http_inspector_module.so
 nginx -V > /workspace/build/nginx-version.txt 2>&1
 mkdir -p /opt/inspector /opt/nginx/sbin /data
-cp objs/ngx_http_inspector_module.so /opt/inspector/
+cp objs/ngx_http_inspector_v2_module.so /opt/inspector/ngx_http_inspector_module.so
 ln -sf /usr/sbin/nginx /opt/nginx/sbin/nginx
 mkdir -p /app
 ln -sfn /workspace/collector /app/collector

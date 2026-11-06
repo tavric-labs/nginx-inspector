@@ -32,7 +32,7 @@ def start(command, name):
 def collector():
     return start([str(root / 'nginx-inspector'), 'serve', '--db', str(root / 'events.sqlite3'),
                   '--control-file', str(root / 'control'), '--udp-port', str(udp_port),
-                  '--http-port', str(http_port)], 'collector')
+                  '--http-port', str(http_port), '--proc-root', '/proc', '--nginx-pid-file', str(root / 'nginx.pid')], 'collector')
 
 
 def get(path):
@@ -59,6 +59,7 @@ try:
     subprocess.run([sys.executable, str(root / 'integration.py')], check=True)
     subprocess.run([sys.executable, str(root / 'native_integration.py')], check=True)
     subprocess.run([sys.executable, str(root / 'on_demand.py')], check=True)
+    subprocess.run([sys.executable, str(root / 'equivalence.py')], check=True)
     receiver.terminate()
     receiver.wait(timeout=5)
     for _ in range(20):
@@ -70,7 +71,7 @@ try:
         connection.close()
     receiver = collector()
     wait_for_collector()
-    request = urllib.request.Request(api_url + '/api/capture/start', b'{"seconds":30}',
+    request = urllib.request.Request(api_url + '/api/capture/start', b'{"seconds":30,"sample_permyriad":10000}',
                                      {'Content-Type': 'application/json'})
     with urllib.request.urlopen(request, timeout=3) as response:
         assert json.load(response)['active']

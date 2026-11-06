@@ -38,14 +38,14 @@ def captured(path):
 api('/api/capture/stop', {})
 assert not api('/api/capture')['active']
 proxy('/off-' + stamp)
-api('/api/capture/start', {})
+api('/api/capture/start', {'sample_permyriad':10000})
 first_path = '/manual-' + stamp
 proxy(first_path)
 first = captured(first_path)
 api('/api/capture/stop', {})
 for _ in range(20):
     proxy('/stopped-' + stamp)
-api('/api/capture/start', {'seconds': 1})
+api('/api/capture/start', {'seconds': 1,'sample_permyriad':10000})
 timed_path = '/timed-' + stamp
 proxy(timed_path)
 timed = captured(timed_path)
@@ -54,7 +54,7 @@ time.sleep(1.15)
 assert not api('/api/capture')['active']
 for _ in range(20):
     proxy('/expired-' + stamp)
-api('/api/capture/start', {})
+api('/api/capture/start', {'sample_permyriad':10000})
 last_path = '/resumed-' + stamp
 proxy(last_path)
 last = captured(last_path)

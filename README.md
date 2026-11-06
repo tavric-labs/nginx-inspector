@@ -25,7 +25,9 @@ nginx-inspector stop
 ```
 
 Open **http://127.0.0.1:19877/**. Use `start` without `--for` for a manual session,
-or `--for 1h` for an automatic stop. History remains available after capture stops.
+or `--for 1h` for an automatic stop. Sessions default to 1% sampling; use
+`start --sample 100 --for 30s` for an explicit short full capture. History remains
+available after capture stops.
 
 ## What you can inspect
 
@@ -33,7 +35,8 @@ or `--for 1h` for an automatic stop. History remains available after capture sto
 - Hook order, filter returns, readiness/timer snapshots, buffer and temporary-file use.
 - Individual upstream attempts and timings, configured retries and timeouts.
 - Configured versus effective buffering, cache outcomes, gzip and file-backed output.
-- Worker/event backend, connection counters and bounded request-pool estimates.
+- Master/worker CPU and memory, connection-slot occupancy, sampled in-flight requests,
+  event backend and bounded request-pool estimates.
 
 Bodies, query strings, authorization, cookies and raw error logs are excluded.
 This is bounded hook observation: it does not record every syscall or reconstruct
@@ -49,6 +52,7 @@ docker compose up --build --detach
 python3 tests/integration.py
 python3 tests/native_integration.py
 python3 tests/on_demand.py
+python3 tests/equivalence.py
 ```
 
 The production runtime is Go and C. Python is used for development fixtures and

@@ -166,7 +166,7 @@ func TestReadOnlyListenerAndControlBoundary(t *testing.T) {
 		t.Fatal(e)
 	}
 	defer c.Close()
-	s := &Server{Control: c}
+	s := &Server{Control: c, workers: newWorkerMonitor("", "")}
 	for _, tc := range []struct {
 		readonly           bool
 		host, origin, body string
