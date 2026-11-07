@@ -90,3 +90,20 @@ retention or collector restarts may remove evidence; unknown never means zero.
 Normal CI compiles the module and tracer without loading kernel probes. The real
 privileged canary is opt-in through workflow_dispatch with kernel_trace=true; a
 skipped runtime test is not evidence that the target kernel supports the probes.
+
+## Playback and missing timings
+
+Replay advances through recorded connection events at 2.6 seconds per event by
+default. Choose 0.5 or 5 seconds, pause, step, or scrub. The blue arrow links
+consecutive observations in timestamp order; playback pace is illustrative and
+is not the measured interval. Clicking nginx opens its seven-stage HTTP replay.
+
+A request marker can join a socket even when capture started after acceptance.
+Such a request may have no SYN, handoff, subscription, or readiness history.
+Each missing interval states which boundary was not retained. Prefer a request
+whose captured history includes accept, registration, readiness, and reads to
+follow connection setup. Existing connections share that history across requests.
+
+Kernel receive-stack CPU attribution and per-byte socket-buffer residence are
+labelled **Not instrumented**, since the current probes cannot measure them.
+They are not replaced by worker CPU averages or HTTP elapsed time.

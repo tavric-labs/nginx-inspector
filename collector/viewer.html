@@ -517,7 +517,7 @@
     return null;
   }
   function openReplayPanel(){renderReplayList();if(!R.kind){const first=state.events[0];if(first)openReplay('completed',first.id);else buildMain();}else paintReplay();}
-  function openReplay(kind,id){stopReplay();R.kind=kind;R.id=id;R.copy=null;R.step=0;R.t=0;R.tab=kind;renderReplayList();buildMain();renderFullJourney();
+  async function openReplay(kind,id){stopReplay();R.kind=kind;R.id=id;R.copy=null;R.step=0;R.t=0;R.tab=kind;renderReplayList();if(kind==='completed'&&!state.events.some(e=>e.id===id)){try{const saved=await json('/api/events/'+encodeURIComponent(id));if(R.id!==id||R.kind!==kind)return;R.copy=saved;}catch{if(R.id!==id||R.kind!==kind)return;}}buildMain();renderFullJourney();
     const m=currentModel();if(m&&m.kind==='completed'){if(m.reached.length)R.playing=false;} paintReplay();}
   function stopReplay(){R.playing=false;clearInterval(R.timer);cancelAnimationFrame(R.raf);R.last=0;}
   function seqOf(m){return m.reached.length?m.reached:[0];}

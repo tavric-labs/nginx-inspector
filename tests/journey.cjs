@@ -14,11 +14,12 @@ const assert=require('node:assert/strict'),fs=require('node:fs');const {chromium
  assert.equal(await page.locator('#component-rx').getAttribute('class'),'component','missing NIC events remain a mechanism');
  assert((await page.locator('#component-syn').getAttribute('class')).includes('observed'));
  assert.equal(await page.locator('img').count(),0,'request values are text, not markup');
- await page.locator('#next').click();assert.equal(await page.locator('#position').innerText().then(t=>t.includes('Accept-queue hook')),true);
- await page.locator('#next').click();await page.locator('#next').click();assert((await page.locator('#event-detail').innerText()).includes('EPOLLIN'));await page.locator('#play').click();await page.waitForTimeout(900);assert((await page.locator('#event-detail').innerText()).includes('epoll returned'));await page.locator('#play').click();
+ await page.locator('#next').click();assert.equal(await page.locator('#position').innerText().then(t=>t.includes('Accept-queue hook')),true);assert.equal(await page.locator('#event-link').getAttribute('visibility'),'visible');
+ await page.locator('#next').click();await page.locator('#next').click();assert((await page.locator('#event-detail').innerText()).includes('EPOLLIN'));assert.equal(await page.locator('#speed').inputValue(),'2600');await page.locator('#speed').selectOption('500');await page.locator('#play').click();await page.waitForTimeout(650);assert((await page.locator('#event-detail').innerText()).includes('epoll returned'));await page.locator('#play').click();
  await page.locator('#component-loop').click();assert((await page.locator('#intent').innerText()).includes('not automatically scheduler queue delay'));
  if(process.env.SCREENSHOT_DIR){fs.mkdirSync(process.env.SCREENSHOT_DIR,{recursive:true});await page.screenshot({path:process.env.SCREENSHOT_DIR+'/request-journey.png',fullPage:true});}
  view={request_id:id,status:'ambiguous',records:[]};await page.locator('#refresh').click();await page.getByText(/Conflicting transport correlations/).waitFor();assert.equal(await page.locator('#puck').getAttribute('visibility'),'hidden');
  view={request_id:id,status:'not_captured',records:[]};await page.locator('#refresh').click();await page.getByText(/No correlated transport capture for this request/).waitFor();assert.equal(await page.locator('#play').isDisabled(),true);
+ assert((await page.locator('#metrics').innerText()).includes('Not instrumented'));
  assert.deepEqual(errors,[]);console.log('PASS: measured queue points, exact nanosecond deltas, shared scopes, unknown nodes, XSS safety, ambiguity and missing capture');
 }finally{await browser.close();}})().catch(e=>{console.error(e);process.exit(1)});
