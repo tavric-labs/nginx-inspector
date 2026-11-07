@@ -96,7 +96,7 @@ skipped runtime test is not evidence that the target kernel supports the probes.
 Replay advances through recorded connection events at 2.6 seconds per event by
 default. Choose 0.5 or 5 seconds, pause, step, or scrub. The blue arrow links
 consecutive observations in timestamp order; playback pace is illustrative and
-is not the measured interval. Clicking nginx opens its seven-stage HTTP replay.
+is not the measured interval. The Explore button follows the selected component and opens its captured operations and mechanism details. Selecting nginx HTTP processing opens its seven-stage HTTP replay.
 
 A request marker can join a socket even when capture started after acceptance.
 Such a request may have no SYN, handoff, subscription, or readiness history.
