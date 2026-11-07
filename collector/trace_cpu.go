@@ -6,7 +6,7 @@ import "fmt"
 // It excludes intervals bracketed by scheduler and interrupt tracepoints. It
 // is not whole-network-stack CPU accounting or exclusive per-request CPU.
 func receiveCPUEntry() string {
-	return `if(!@rx_cur_depth[cpu]){@rx_cur_depth[cpu]=$d;@rx_cur_tid[cpu]=(uint64)tid;@rx_cpu_at[cpu]=nsecs;@rx_cpu_acc[cpu]=(uint64)0;@rx_off_acc[cpu]=(uint64)0;@rx_irq_acc[cpu]=(uint64)0;@rx_irq_depth[cpu]=(uint64)0;@rx_off_at[cpu]=(uint64)0;@rx_irq_at[cpu]=(uint64)0;@rx_account[tid,cpu,$d]=(uint64)1;}`
+	return `if(!@rx_cur_depth[cpu]){@rx_cur_tid[cpu]=(uint64)tid;@rx_cpu_acc[cpu]=(uint64)0;@rx_off_acc[cpu]=(uint64)0;@rx_irq_acc[cpu]=(uint64)0;@rx_irq_depth[cpu]=(uint64)0;@rx_off_at[cpu]=(uint64)0;@rx_irq_at[cpu]=(uint64)0;@rx_account[tid,cpu,$d]=(uint64)1;@rx_cur_depth[cpu]=$d;@rx_cpu_at[cpu]=nsecs;}`
 }
 func receiveCPUProbes() string {
 	return `tracepoint:irq:irq_handler_entry,tracepoint:irq:softirq_entry,tracepoint:irq_vectors:*_entry /@rx_cur_depth[cpu] && @rx_cur_tid[cpu]==tid/ {$now=nsecs;if(!@rx_irq_depth[cpu]){if(@rx_cpu_at[cpu]){@rx_cpu_acc[cpu]=@rx_cpu_acc[cpu]+$now-@rx_cpu_at[cpu];@rx_cpu_at[cpu]=(uint64)0;}@rx_irq_at[cpu]=$now;}@rx_irq_depth[cpu]=@rx_irq_depth[cpu]+1;}

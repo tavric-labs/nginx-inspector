@@ -230,7 +230,7 @@ func TestReceiveCPUAndResidenceBounds(t *testing.T) {
 		}
 	}
 	script := traceProgram(TraceOptions{MasterPID: 10, Module: "/tmp/inspector.so", Duration: time.Minute}, []int{11}, []uint64{123}, strings.Repeat("a", 32))
-	for _, want := range []string{"tracepoint:sched:sched_switch", "tracepoint:irq_vectors:*_entry", "on_cpu_ns", "residence_min_ns", "out_of_order_queue.rb_node", "@rxdepth[(uint64)0,(uint64)65536]=(uint64)0", "clear(@q_first)", "clear(@rx_cpu_acc)"} {
+	for _, want := range []string{"tracepoint:sched:sched_switch", "tracepoint:irq_vectors:*_entry", "on_cpu_ns", "residence_min_ns", "out_of_order_queue.rb_node", "@rxdepth[(uint64)0,(uint64)65536]=(uint64)0", "clear(@q_ranges)", "clear(@rx_cpu_acc)"} {
 		if !strings.Contains(script, want) {
 			t.Fatal("missing accounting boundary or bounded cleanup", want)
 		}

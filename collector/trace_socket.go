@@ -50,11 +50,12 @@ func socketTypeSeeds() string {
 	for _, name := range []string{"rx_seq", "rx_copied", "rx_ooo", "rx_state", "rxsk", "rxat", "rxgen", "rx_account"} {
 		s += fmt.Sprintf(`@%s[(uint64)0,(uint64)65536,(uint64)0]=(uint64)0;delete(@%s[(uint64)0,(uint64)65536,(uint64)0]);`, name, name)
 	}
-	for _, name := range []string{"q_first", "q_last", "q_enter", "q_visible", "q_gen"} {
+	for _, name := range []string{"q_slots"} {
 		s += fmt.Sprintf(`@%s[(uint64)0,(uint64)0]=(uint64)0;delete(@%s[(uint64)0,(uint64)0]);`, name, name)
 	}
 	for _, name := range []string{"recv_copied", "recv_enter"} {
 		s += fmt.Sprintf(`@%s[(uint64)0]=(uint64)0;delete(@%s[(uint64)0]);`, name, name)
 	}
+	s += `@q_ranges[(uint64)0,(uint64)0]=((uint64)0,(uint64)0,(uint64)0,(uint64)0,(uint64)0);delete(@q_ranges[(uint64)0,(uint64)0]);`
 	return s
 }
