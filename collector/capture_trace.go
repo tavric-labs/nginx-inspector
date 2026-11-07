@@ -30,6 +30,9 @@ func RunCaptureTrace(ctx context.Context, base string, options TraceOptions, sam
 	if os.Geteuid() != 0 {
 		return fmt.Errorf("transport-enabled start requires separately authorized host privileges")
 	}
+	if !options.Deadline.IsZero() {
+		options.Duration = time.Until(options.Deadline).Truncate(time.Second)
+	}
 	if options.Duration < time.Second || options.Duration > 2*time.Hour || options.Duration%time.Second != 0 {
 		return fmt.Errorf("transport-enabled start requires --for 1s..2h in whole seconds")
 	}
@@ -83,10 +86,14 @@ func runCaptureTrace(ctx context.Context, base string, options TraceOptions, sam
 	if current.Active {
 		return fmt.Errorf("another transport session is active; stop it before starting again")
 	}
-	ctx, cancel := context.WithTimeout(ctx, options.Duration)
+	deadline := options.Deadline
+	if deadline.IsZero() {
+		deadline = time.Now().Add(options.Duration)
+	}
+	ctx, cancel := context.WithDeadline(ctx, deadline)
 	defer cancel()
-	expires := time.Now().Add(options.Duration).UnixMilli()
-	if err := request("/api/capture/start", map[string]any{"seconds": options.Duration.Seconds(), "sample_permyriad": sample}, nil); err != nil {
+	expires := deadline.UnixMilli()
+	if err := request("/api/capture/start", map[string]any{"seconds": time.Until(deadline).Seconds(), "sample_permyriad": sample}, nil); err != nil {
 		return err
 	}
 	// Every exit stops both modes. No successful HTTP-only session is left behind

@@ -104,9 +104,9 @@ Each missing interval states which boundary was not retained. Prefer a request
 whose captured history includes accept, registration, readiness, and reads to
 follow connection setup. Existing connections share that history across requests.
 
-Kernel receive-stack CPU attribution and per-byte socket-buffer residence are
-labelled **Not instrumented**, since the current probes cannot measure them.
-They are not replaced by worker CPU averages or HTTP elapsed time.
+The CPU and residence cards report only instrumented callback estimates and
+matched in-order TCP byte ranges. Missing coverage is not replaced by worker
+CPU averages or HTTP elapsed time.
 
 ## One command, one recording window
 
@@ -164,9 +164,9 @@ session still separate reused descriptors; the socket mapping is removed at
 kernel free. Callback nesting and maps are bounded. Missing probes, late attach,
 map/output limits, truncation and retention can still leave partial history.
 
-Kernel receive-stack CPU attribution and per-byte buffer residence remain outside
-these measurements. Replay shows callback elapsed time and socket state as useful
-additional observations, without replacing those unknowns.
+Whole receive-stack CPU attribution remains unavailable. The scoped CPU estimate
+and byte-residence bounds below add observations without inventing exclusive
+per-request CPU or complete per-byte history.
 
 References: [nginx event/development guide](https://nginx.org/en/docs/dev/development_guide.html),
 [Linux receive semantics](https://www.man7.org/linux/man-pages/man2/recvmsg.2.html),
@@ -175,3 +175,40 @@ References: [nginx event/development guide](https://nginx.org/en/docs/dev/develo
 [socket accounting](https://github.com/torvalds/linux/blob/v6.8/include/net/sock.h),
 [TCP tracepoints](https://github.com/torvalds/linux/blob/v6.8/include/trace/events/tcp.h)
 and [socket-state tracepoint](https://github.com/torvalds/linux/blob/v6.8/include/trace/events/sock.h).
+
+
+## Receive CPU estimate and byte-residence bounds
+
+For the outermost scoped TCP receive callback, the tracer brackets elapsed time
+and tracks scheduler switch-out/switch-in plus interrupt-handler entry/exit.
+The on-CPU estimate excludes those observed off-CPU and interrupt intervals.
+Nested callbacks can lack a separate CPU estimate to avoid double counting.
+These are trace-boundary estimates with instrumentation overhead, not Linux CPU
+billing for an HTTP request, and not all NIC/IP/receive-stack work. The replay
+shows how many retained callbacks have accounting.
+
+The residence tracker keeps at most eight pending ranges per identified socket.
+It uses TCP receive/consume sequence state internally, emitting only byte counts
+and duration bounds. It accepts data becoming contiguous during an established
+receive callback only when no out-of-order queue is present and consumption did
+not advance inside that callback. Closing/FIN transitions and ambiguous ranges
+are excluded. No TCP sequence numbers, headers, or payload bytes are emitted.
+
+A later `tcp_recvmsg` consumption matches overlaps, including partial reads and
+sequence wrap within the bounded TCP window. Queue insertion occurred between
+the receive callback entry and return; consumption occurred between the receive
+call entry and return. Their brackets produce a lower and upper residence bound.
+A lower bound of zero means the observed intervals overlap, not that the bytes
+waited zero time. One record aggregates matched ranges consumed by that read;
+its bounds encompass those covered bytes. Overwritten pending ranges are counted.
+
+The measured queue is TCP's receive queue, not NIC rings, SYN/accept queues,
+TLS userspace buffers, or an HTTP/2 stream's queue. Shared connection bytes cannot
+be charged exclusively to one HTTP request. Late attachment, unobserved reads,
+out-of-order processing, map/output limits and retained-history truncation leave
+explicit gaps. A request with no matched byte ranges keeps an unavailable label.
+
+To preserve an existing recording window during a reviewed helper replacement,
+use `start --transport --until 2026-12-01T14:00:00Z` with the verified module/master
+options. This synthetic example is an absolute stop time. `--until` and `--for`
+are mutually exclusive; past deadlines or ones over two hours away are rejected.

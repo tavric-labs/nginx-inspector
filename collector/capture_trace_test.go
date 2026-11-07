@@ -36,12 +36,15 @@ func traceControlFixture(t *testing.T) (*Server, *httptest.Server) {
 	return s, h
 }
 func TestUnifiedCaptureStopsBoth(t *testing.T) {
-	for _, mode := range []string{"stop", "expiry", "failure"} {
+	for _, mode := range []string{"stop", "expiry", "deadline", "failure"} {
 		t.Run(mode, func(t *testing.T) {
 			s, h := traceControlFixture(t)
 			options := TraceOptions{MasterPID: 10, Duration: 10 * time.Second}
 			if mode == "expiry" {
 				options.Duration = time.Second
+			}
+			if mode == "deadline" {
+				options.Deadline = time.Now().Add(time.Second)
 			}
 			armed := make(chan struct{})
 			done := make(chan error, 1)

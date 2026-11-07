@@ -23,6 +23,7 @@ type TraceOptions struct {
 	MasterPID int
 	Module    string
 	Duration  time.Duration
+	Deadline  time.Time
 	UDPPort   int
 }
 
@@ -277,7 +278,7 @@ func traceProgram(o TraceOptions, pids []int, inodes []uint64, session string) s
 		return fmt.Sprintf(`printf("%s\"host_pid\":%%d,\"fd\":%%d,\"generation\":\"%%llu\",\"at_ns\":\"%%llu\",\"event\":\"%s\"%s}\n", pid,$fd,@gen[pid,$fd],nsecs%s);`, prefix, event, extra, args)
 	}
 	var b strings.Builder
-	b.WriteString(`BEGIN {printf("TRACE_READY\n");}` + "\n")
+	b.WriteString(`BEGIN {` + socketTypeSeeds() + `printf("TRACE_READY\n");}` + "\n")
 
 	// Listener socket inode is verified against the selected master's ss ownership.
 	fmt.Fprintf(&b, `kprobe:inet_csk_reqsk_queue_hash_add { $sk=(struct sock*)arg0; $so=$sk->sk_socket; if($so!=0){$f=$so->file;if($f!=0){$ino=$f->f_inode->i_ino;if(%s){@syn[(uint64)arg1]=nsecs;}}}}
@@ -285,10 +286,10 @@ kprobe:inet_csk_complete_hashdance { $sk=(struct sock*)arg0;$so=$sk->sk_socket;i
 kretprobe:inet_csk_complete_hashdance {delete(@handoff_req[tid,cpu]);delete(@handoff_syn[tid,cpu]);}
 kprobe:inet_csk_reqsk_queue_add { $sk=(struct sock*)arg0;$so=$sk->sk_socket;if($so!=0){$f=$so->file;if($f!=0){$ino=$f->f_inode->i_ino;if(%s){@queued[(uint64)arg2]=nsecs;@qsrc[(uint64)arg2]=(uint64)1;@synchild[(uint64)arg2]=(uint64)0;if(@handoff_req[tid,cpu]==(uint64)arg1){@synchild[(uint64)arg2]=@handoff_syn[tid,cpu];}delete(@syn[(uint64)arg1]);}}}}
 kprobe:inet_csk_reqsk_queue_drop {delete(@syn[(uint64)arg1]);}
-kprobe:sk_free,kprobe:__sk_free {delete(@qsrc[(uint64)arg0]);delete(@queued[(uint64)arg0]);delete(@synchild[(uint64)arg0]);delete(@skpid[(uint64)arg0]);delete(@skfd[(uint64)arg0]);delete(@skgen[(uint64)arg0]);}
+kprobe:sk_free,kprobe:__sk_free {delete(@qsrc[(uint64)arg0]);delete(@queued[(uint64)arg0]);delete(@synchild[(uint64)arg0]);if(@skpid[(uint64)arg0]){%s}delete(@skpid[(uint64)arg0]);delete(@skfd[(uint64)arg0]);delete(@skgen[(uint64)arg0]);}
 kprobe:inet_csk_accept /%s/ { @accepting[tid]=1; }
 kretprobe:inet_csk_accept /%s && @accepting[tid]/ {if(retval!=0){@acceptedsk[tid]=(uint64)retval;@aq[tid]=@queued[(uint64)retval];@aqsrc[tid]=@qsrc[(uint64)retval];delete(@qsrc[(uint64)retval]);@as[tid]=@synchild[(uint64)retval];delete(@queued[(uint64)retval]);delete(@synchild[(uint64)retval]);}delete(@accepting[tid]);}
-`, listen, listen, listen, scope, scope)
+`, listen, listen, listen, bufferSocketCleanup(), scope, scope)
 	for _, name := range []string{"accept4", "accept"} {
 		fmt.Fprintf(&b, `tracepoint:syscalls:sys_exit_%s /%s/ { if(args->ret>=0){$fd=(int64)args->ret;@gen[pid,$fd]=nsecs;$sk=@acceptedsk[tid];if($sk){%s}%s}delete(@acceptedsk[tid]);delete(@aq[tid]);delete(@aqsrc[tid]);delete(@as[tid]);}
 `, name, scope, socketBinding(), emit("accept", `,\"queued_ns\":\"%llu\",\"syn_ns\":\"%llu\",\"queue_source\":%u`, `,@aq[tid],@as[tid],@aqsrc[tid]`))
@@ -307,7 +308,7 @@ tracepoint:syscalls:sys_exit_epoll_ctl /%s && @ctl[tid]/ {if(args->ret==0){$fd=@
 tracepoint:syscalls:sys_exit_%s /%s/ {$i=0;unroll(32){if($i<args->ret){$ptr=@ep_ptr[tid]+(uint64)12*(uint64)$i;$data=*(uint64*)uptr($ptr+4);$f=@datafd[pid,@ep_fd[tid],$data];if($f){$fd=$f-1;if(@gen[pid,$fd] && @datagen[pid,@ep_fd[tid],$data]==@gen[pid,$fd]){%s}}}$i=$i+1;}delete(@ep_ptr[tid]);delete(@ep_fd[tid]);}
 `, name, scope, name, scope, emit("ready", `,\"flags\":%u`, `,*(uint32*)uptr($ptr)`))
 	}
-	for _, name := range []string{"read", "recvfrom", "recvmsg"} {
+	for _, name := range []string{"read", "readv", "recvfrom", "recvmsg"} {
 		fmt.Fprintf(&b, `tracepoint:syscalls:sys_enter_%s /%s/ {if(@gen[pid,(int64)args->fd]){@read_fd[tid]=(int64)args->fd;@read_at[tid]=nsecs;}}
 tracepoint:syscalls:sys_exit_%s /%s && @read_at[tid]/ {$fd=@read_fd[tid];if(args->ret>=0){%s}else{%s}delete(@read_fd[tid]);delete(@read_at[tid]);}
 `, name, scope, name, scope, emit("read", fmt.Sprintf(`,\"operation\":\"%s\",\"duration_ns\":\"%%llu\",\"bytes\":%%lld`, name), `,nsecs-@read_at[tid],args->ret`), emit("read_error", fmt.Sprintf(`,\"operation\":\"%s\",\"duration_ns\":\"%%llu\",\"errno\":%%d`, name), `,nsecs-@read_at[tid],-(int64)args->ret`))
@@ -325,8 +326,8 @@ tracepoint:syscalls:sys_exit_%s /%s && @write_at[tid]/ {$fd=@write_fd[tid];if(ar
 	b.WriteString(socketTraceProgram(prefix, scope))
 	fmt.Fprintf(&b, `tracepoint:syscalls:sys_enter_close /%s/ {$fd=(int64)args->fd;if(@gen[pid,$fd]){%s delete(@fdsk[pid,$fd]);delete(@gen[pid,$fd]);}}
 interval:s:%d { exit(); }
-END { clear(@syn);clear(@queued);clear(@synchild);clear(@gen);clear(@datafd);clear(@datagen);clear(@handoff_req);clear(@handoff_syn);clear(@aq);clear(@aqsrc);clear(@qsrc);clear(@as);clear(@accepting);clear(@ctl);clear(@ctl_fd);clear(@ctl_ep);clear(@ctl_data);clear(@ctl_flags);clear(@ep_ptr);clear(@ep_fd);clear(@read_fd);clear(@read_at);clear(@write_at);clear(@write_fd);clear(@fdsk);clear(@skpid);clear(@skfd);clear(@skgen);clear(@acceptedsk);clear(@msgsk);clear(@msgfd);clear(@msggen);clear(@rxdepth);clear(@rxsk);clear(@rxat);clear(@rxgen); }
-`, scope, emit("close", "", ""), int(o.Duration.Seconds()))
+END { clear(@syn);clear(@queued);clear(@synchild);clear(@gen);clear(@datafd);clear(@datagen);clear(@handoff_req);clear(@handoff_syn);clear(@aq);clear(@aqsrc);clear(@qsrc);clear(@as);clear(@accepting);clear(@ctl);clear(@ctl_fd);clear(@ctl_ep);clear(@ctl_data);clear(@ctl_flags);clear(@ep_ptr);clear(@ep_fd);clear(@read_fd);clear(@read_at);clear(@write_at);clear(@write_fd);clear(@fdsk);clear(@skpid);clear(@skfd);clear(@skgen);clear(@acceptedsk);clear(@msgsk);clear(@msgfd);clear(@msggen);clear(@rxdepth);clear(@rxsk);clear(@rxat);clear(@rxgen); %s }
+`, scope, emit("close", "", ""), int(o.Duration.Seconds()), receiveCPUClear()+bufferClear())
 	return b.String()
 }
 

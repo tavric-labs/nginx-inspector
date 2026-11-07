@@ -13,18 +13,19 @@ func socketBinding() string {
 func socketTraceProgram(prefix, scope string) string {
 	var b string
 	for _, v := range []struct{ name, scopeMap, fdMap, point string }{{"tcp_recvmsg", "read_at", "read_fd", "recvmsg_return"}, {"tcp_sendmsg", "write_at", "write_fd", "sendmsg_return"}} {
-		b += fmt.Sprintf(`kprobe:%s /%s && @%s[tid]/ {$fd=@%s[tid];$sk=(uint64)arg0;%s @msgsk[tid]=$sk;@msgfd[tid]=$fd;@msggen[tid]=@gen[pid,$fd];}
-kretprobe:%s /%s && @msgsk[tid]/ {$fd=@msgfd[tid];$sk=@msgsk[tid];if(@gen[pid,$fd]==@msggen[tid]){%s}delete(@msgsk[tid]);delete(@msgfd[tid]);delete(@msggen[tid]);}
-`, v.name, scope, v.scopeMap, v.fdMap, socketBinding(), v.name, scope, socketSnapshot(prefix, v.point))
+		entry, exit := "", ""
+		if v.name == "tcp_recvmsg" {
+			entry = bufferReadEntry()
+			exit = bufferReadReturn(prefix)
+		}
+		b += fmt.Sprintf(`kprobe:%s /%s && @%s[tid]/ {$fd=@%s[tid];$sk=(uint64)arg0;%s @msgsk[tid]=$sk;@msgfd[tid]=$fd;@msggen[tid]=@gen[pid,$fd];%s}
+kretprobe:%s /%s && @msgsk[tid]/ {$read_end=nsecs;$fd=@msgfd[tid];$sk=@msgsk[tid];if(@gen[pid,$fd]==@msggen[tid]){%s %s}delete(@msgsk[tid]);delete(@msgfd[tid]);delete(@msggen[tid]);}
+`, v.name, scope, v.scopeMap, v.fdMap, socketBinding(), entry, v.name, scope, socketSnapshot(prefix, v.point), exit)
 	}
-	// Receive callbacks may execute in softirq context, outside the owning worker.
-	// Track nesting only while a selected socket's call is active. Every return
-	// pops its own depth; an unselected nested call cannot consume an outer frame.
-	b += fmt.Sprintf(`kprobe:tcp_rcv_established {$sk=(uint64)arg0;$d=(uint64)@rxdepth[tid,cpu];if($d>0||@skpid[$sk]){$d=$d+1;@rxdepth[tid,cpu]=$d;if($d<=8&&@skpid[$sk]){@rxsk[tid,cpu,$d]=$sk;@rxat[tid,cpu,$d]=nsecs;@rxgen[tid,cpu,$d]=@skgen[$sk];}}}
-kretprobe:tcp_rcv_established {$d=(uint64)@rxdepth[tid,cpu];if($d>0){if($d<=8&&@rxat[tid,cpu,$d]){$sk=@rxsk[tid,cpu,$d];$owner=@skpid[$sk];$fd=@skfd[$sk];$g=@rxgen[tid,cpu,$d];if($owner&&$g&&@skgen[$sk]==$g){printf("%s\"host_pid\":%%d,\"fd\":%%d,\"generation\":\"%%llu\",\"at_ns\":\"%%llu\",\"event\":\"network_rx\",\"duration_ns\":\"%%llu\",\"cpu\":%%u}\n",$owner,$fd,$g,nsecs,nsecs-@rxat[tid,cpu,$d],cpu);}delete(@rxsk[tid,cpu,$d]);delete(@rxat[tid,cpu,$d]);delete(@rxgen[tid,cpu,$d]);}if($d==1){delete(@rxdepth[tid,cpu]);}else{@rxdepth[tid,cpu]=$d-1;}}}
-`, prefix)
-	// Historical socket identity survives descriptor close until sk_free. This
-	// retains shutdown transitions without joining a reused FD to the old socket.
+	b += fmt.Sprintf(`kprobe:tcp_rcv_established {$sk=(uint64)arg0;$d=(uint64)@rxdepth[tid,cpu];if($d>0||@skpid[$sk]){$d=$d+1;@rxdepth[tid,cpu]=$d;if($d<=8&&@skpid[$sk]){@rxsk[tid,cpu,$d]=$sk;@rxat[tid,cpu,$d]=nsecs;@rxgen[tid,cpu,$d]=@skgen[$sk];%s %s}}}
+kretprobe:tcp_rcv_established {$end=nsecs;$d=(uint64)@rxdepth[tid,cpu];if($d>0){if($d<=8&&@rxat[tid,cpu,$d]){$sk=@rxsk[tid,cpu,$d];$owner=@skpid[$sk];$fd=@skfd[$sk];$g=@rxgen[tid,cpu,$d];if($owner&&$g&&@skgen[$sk]==$g){%s %s}delete(@rxsk[tid,cpu,$d]);delete(@rxat[tid,cpu,$d]);delete(@rxgen[tid,cpu,$d]);%s}if($d==1){delete(@rxdepth[tid,cpu]);}else{@rxdepth[tid,cpu]=$d-1;}}}
+`, bufferArrivalEntry(), receiveCPUEntry(), bufferArrivalReturn(), receiveCPUResult(prefix), bufferFrameCleanup())
+	b += receiveCPUProbes()
 	for _, ev := range []struct{ probe, event, extra, args string }{
 		{"sock:inet_sock_set_state", "tcp_state", `,\"from_state\":%u,\"to_state\":%u`, `,args->oldstate,args->newstate`},
 		{"tcp:tcp_retransmit_skb", "tcp_retransmit", "", ""},
@@ -33,4 +34,18 @@ kretprobe:tcp_rcv_established {$d=(uint64)@rxdepth[tid,cpu];if($d>0){if($d<=8&&@
 `, ev.probe, prefix, ev.event, ev.extra, ev.args)
 	}
 	return b
+}
+
+// bpftrace 0.20 cannot infer a self-referential map's value type. Seed and
+// immediately remove impossible keys before readiness; no real socket/CPU key
+// is overwritten and no dummy observations are emitted.
+func socketTypeSeeds() string {
+	s := `@rxdepth[(uint64)0,(uint64)65536]=(uint64)0;delete(@rxdepth[(uint64)0,(uint64)65536]);`
+	for _, name := range []string{"q_cursor", "q_overruns"} {
+		s += fmt.Sprintf(`@%s[(uint64)0]=(uint64)0;delete(@%s[(uint64)0]);`, name, name)
+	}
+	for _, name := range []string{"rx_cur_depth", "rx_cur_tid", "rx_cpu_at", "rx_cpu_acc", "rx_off_acc", "rx_irq_acc", "rx_irq_depth", "rx_off_at", "rx_irq_at"} {
+		s += fmt.Sprintf(`@%s[(uint64)65536]=(uint64)0;delete(@%s[(uint64)65536]);`, name, name)
+	}
+	return s
 }

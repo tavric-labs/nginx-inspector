@@ -99,6 +99,7 @@ func run(args []string) error {
 		sample := f.Float64("sample", 1, "capture percentage, 0.01..100; default 1")
 		duration := f.String("for", "", "capture duration, e.g. 10m or 1h")
 		once := f.Bool("once", false, "print once")
+		until := f.String("until", "", "absolute RFC3339 stop time for transport-enabled start")
 		transport := f.Bool("transport", false, "start HTTP and kernel tracing together (host privileges required)")
 		master := f.Int("master-pid", 0, "host nginx master for transport-enabled start")
 		module := f.String("module", "", "marker-enabled module for transport-enabled start")
@@ -110,16 +111,34 @@ func run(args []string) error {
 			if args[0] != "start" {
 				return fmt.Errorf("--transport requires start")
 			}
-			d, e := time.ParseDuration(*duration)
-			if e != nil {
-				return fmt.Errorf("--transport requires --for, e.g. 2h")
+			var d time.Duration
+			var deadline time.Time
+			var e error
+			if *until != "" {
+				if *duration != "" {
+					return fmt.Errorf("choose --for or --until")
+				}
+				deadline, e = time.Parse(time.RFC3339Nano, *until)
+				if e != nil {
+					return fmt.Errorf("--until requires an RFC3339 time")
+				}
+				d = time.Until(deadline).Truncate(time.Second)
+			} else {
+				d, e = time.ParseDuration(*duration)
+				if e != nil {
+					return fmt.Errorf("--transport requires --for or --until")
+				}
 			}
+
 			if math.IsNaN(*sample) || math.IsInf(*sample, 0) || *sample < .01 || *sample > 100 {
 				return fmt.Errorf("sample must be 0.01..100 percent")
 			}
 			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer cancel()
-			return collector.RunCaptureTrace(ctx, *url, collector.TraceOptions{MasterPID: *master, Module: *module, Duration: d, UDPPort: *udp}, int(math.Round(*sample*100)), io.Discard, os.Stderr)
+			return collector.RunCaptureTrace(ctx, *url, collector.TraceOptions{MasterPID: *master, Module: *module, Duration: d, Deadline: deadline, UDPPort: *udp}, int(math.Round(*sample*100)), io.Discard, os.Stderr)
+		}
+		if *until != "" {
+			return fmt.Errorf("--until requires start --transport")
 		}
 		path, method := "/api/capture", "GET"
 		var body []byte

@@ -194,3 +194,50 @@ func TestDeepConnectionMetadata(t *testing.T) {
 		}
 	}
 }
+
+func TestReceiveCPUAndResidenceBounds(t *testing.T) {
+	cpu := 0
+	v := traceFixture("network_rx", "", "100", "200")
+	v.CPU = &cpu
+	v.Duration = "50"
+	v.OnCPU = "30"
+	v.OffCPU = "10"
+	v.IRQ = "5"
+	if _, e := ValidateTransport(encoded(v)); e != nil {
+		t.Fatal(e)
+	}
+	v.IRQ = "20"
+	if _, e := ValidateTransport(encoded(v)); e == nil {
+		t.Fatal("CPU components exceeded elapsed callback")
+	}
+	v.IRQ = ""
+	if _, e := ValidateTransport(encoded(v)); e == nil {
+		t.Fatal("accepted incomplete CPU accounting")
+	}
+	q := traceFixture("buffer_residence", "", "100", "300")
+	q.Bytes = 64
+	q.MatchedRanges = 2
+	q.ResidenceMin = "0"
+	q.ResidenceMax = "100"
+	if _, e := ValidateTransport(encoded(q)); e != nil {
+		t.Fatal(e)
+	}
+	for _, mutate := range []func(*TransportRecord){func(v *TransportRecord) { v.ResidenceMin = "101" }, func(v *TransportRecord) { v.ResidenceMax = "201" }, func(v *TransportRecord) { v.MatchedRanges = 9 }, func(v *TransportRecord) { v.Bytes = 0 }, func(v *TransportRecord) { v.ResidenceMax = "-1" }, func(v *TransportRecord) { v.RequestID = "11-1-2-3"; v.RequestNumber = 1 }} {
+		bad := q
+		mutate(&bad)
+		if _, e := ValidateTransport(encoded(bad)); e == nil {
+			t.Fatal("invalid residence accepted", bad)
+		}
+	}
+	script := traceProgram(TraceOptions{MasterPID: 10, Module: "/tmp/inspector.so", Duration: time.Minute}, []int{11}, []uint64{123}, strings.Repeat("a", 32))
+	for _, want := range []string{"tracepoint:sched:sched_switch", "tracepoint:irq_vectors:*_entry", "on_cpu_ns", "residence_min_ns", "out_of_order_queue.rb_node", "@rxdepth[(uint64)0,(uint64)65536]=(uint64)0", "clear(@q_first)", "clear(@rx_cpu_acc)"} {
+		if !strings.Contains(script, want) {
+			t.Fatal("missing accounting boundary or bounded cleanup", want)
+		}
+	}
+	for _, bad := range []string{"skb->data", "skb->cb", "args->buf", "%p", "\\\"seq\\\":"} {
+		if strings.Contains(script, bad) {
+			t.Fatal("payload or raw sequence exported", bad)
+		}
+	}
+}

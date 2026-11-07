@@ -36,6 +36,13 @@ type TransportRecord struct {
 	Socket        *SocketObservation `json:"socket,omitempty"`
 	FromState     uint8              `json:"from_state,omitempty"`
 	ToState       uint8              `json:"to_state,omitempty"`
+	OnCPU         string             `json:"on_cpu_ns,omitempty"`
+	OffCPU        string             `json:"off_cpu_ns,omitempty"`
+	IRQ           string             `json:"irq_handler_ns,omitempty"`
+	ResidenceMin  string             `json:"residence_min_ns,omitempty"`
+	ResidenceMax  string             `json:"residence_max_ns,omitempty"`
+	MatchedRanges uint8              `json:"matched_ranges,omitempty"`
+	QueueOverruns uint64             `json:"queue_overruns,omitempty"`
 }
 
 // Socket snapshots describe one shared TCP connection, never a request's memory.
@@ -92,7 +99,7 @@ func ValidateTransport(raw []byte) (TransportRecord, error) {
 			return t, fmt.Errorf("invalid session")
 		}
 	}
-	if !contains([]string{"accept", "register", "ready", "read", "read_error", "write", "write_error", "socket", "network_rx", "tcp_state", "tcp_retransmit", "close", "request_begin", "request_end"}, t.Event) {
+	if !contains([]string{"accept", "register", "ready", "read", "read_error", "write", "write_error", "socket", "network_rx", "buffer_residence", "tcp_state", "tcp_retransmit", "close", "request_begin", "request_end"}, t.Event) {
 		return t, fmt.Errorf("unknown transport event")
 	}
 	if t.FromState > 32 || t.ToState > 32 || t.Event != "tcp_state" && (t.FromState != 0 || t.ToState != 0) {
@@ -101,7 +108,7 @@ func ValidateTransport(raw []byte) (TransportRecord, error) {
 	if t.Errno < 0 || t.Errno > 4095 || t.CPU != nil && (*t.CPU < 0 || *t.CPU > 65535) {
 		return t, fmt.Errorf("invalid syscall/cpu metadata")
 	}
-	if t.Operation != "" && !contains([]string{"read", "recvfrom", "recvmsg", "write", "writev", "sendto", "sendmsg", "sendfile"}, t.Operation) {
+	if t.Operation != "" && !contains([]string{"read", "readv", "recvfrom", "recvmsg", "write", "writev", "sendto", "sendmsg", "sendfile"}, t.Operation) {
 		return t, fmt.Errorf("unknown syscall operation")
 	}
 	if t.CPU != nil && t.Event != "network_rx" {
@@ -110,7 +117,7 @@ func ValidateTransport(raw []byte) (TransportRecord, error) {
 	if t.Operation != "" {
 		reading := t.Event == "read" || t.Event == "read_error"
 		writing := t.Event == "write" || t.Event == "write_error"
-		if !reading && !writing || reading && !contains([]string{"read", "recvfrom", "recvmsg"}, t.Operation) || writing && !contains([]string{"write", "writev", "sendto", "sendmsg", "sendfile"}, t.Operation) {
+		if !reading && !writing || reading && !contains([]string{"read", "readv", "recvfrom", "recvmsg"}, t.Operation) || writing && !contains([]string{"write", "writev", "sendto", "sendmsg", "sendfile"}, t.Operation) {
 			return t, fmt.Errorf("operation/event mismatch")
 		}
 	}
@@ -135,6 +142,30 @@ func ValidateTransport(raw []byte) (TransportRecord, error) {
 			return t, fmt.Errorf("invalid socket snapshot")
 		}
 	}
+	if t.OnCPU != "" || t.OffCPU != "" || t.IRQ != "" {
+		if t.Event != "network_rx" || !decimalNS(t.OnCPU, false) || !decimalNS(t.OffCPU, false) || !decimalNS(t.IRQ, false) {
+			return t, fmt.Errorf("invalid receive CPU accounting")
+		}
+		total, _ := strconv.ParseUint(t.Duration, 10, 64)
+		on, _ := strconv.ParseUint(t.OnCPU, 10, 64)
+		off, _ := strconv.ParseUint(t.OffCPU, 10, 64)
+		irq, _ := strconv.ParseUint(t.IRQ, 10, 64)
+		if on > total || off > total-on || irq > total-on-off {
+			return t, fmt.Errorf("receive CPU accounting exceeds elapsed time")
+		}
+	}
+	if t.Event == "buffer_residence" {
+		if !decimalNS(t.ResidenceMin, false) || !decimalNS(t.ResidenceMax, false) || t.Bytes <= 0 || t.Bytes >= 1<<30 || t.MatchedRanges < 1 || t.MatchedRanges > 8 {
+			return t, fmt.Errorf("invalid byte-residence bounds")
+		}
+		lo, _ := strconv.ParseUint(t.ResidenceMin, 10, 64)
+		hi, _ := strconv.ParseUint(t.ResidenceMax, 10, 64)
+		if lo > hi {
+			return t, fmt.Errorf("reversed byte-residence bounds")
+		}
+	} else if t.ResidenceMin != "" || t.ResidenceMax != "" || t.MatchedRanges != 0 || t.QueueOverruns != 0 {
+		return t, fmt.Errorf("byte-residence metadata on another event")
+	}
 	marker := t.Event == "request_begin" || t.Event == "request_end"
 	if marker {
 		if !idPattern.MatchString(t.RequestID) || t.RequestID == "" || t.RequestNumber < 1 {
@@ -148,6 +179,13 @@ func ValidateTransport(raw []byte) (TransportRecord, error) {
 	if at < gen {
 		return t, fmt.Errorf("event predates connection generation")
 	}
+	if t.Event == "buffer_residence" {
+		hi, _ := strconv.ParseUint(t.ResidenceMax, 10, 64)
+		if hi > at-gen {
+			return t, fmt.Errorf("byte residence predates observed socket")
+		}
+	}
+
 	for _, v := range []string{t.Queued, t.Syn} {
 		if v != "" {
 			n, _ := strconv.ParseUint(v, 10, 64)
