@@ -67,7 +67,7 @@ Listener inode filters scope TCP queue probes. No socket endpoints, raw kernel
 pointers, memory dumps or payloads are emitted. Dependencies are bpftrace and ss
 and readable kernel BTF; the tracer never installs packages.
 
-Stop with SIGINT/SIGTERM. Sessions allow whole-second durations from 1 to 600
+Stop with SIGINT/SIGTERM. Sessions allow whole-second durations from 1 to 7,200
 seconds and stop at 64 MiB of emitted records. Map capacity is 4,096 keys per map;
 at most 32 returned descriptors are examined in an epoll call. These bounds and
 kernel/output drops can leave gaps. Probe overhead is real and workload dependent;
@@ -107,3 +107,30 @@ follow connection setup. Existing connections share that history across requests
 Kernel receive-stack CPU attribution and per-byte socket-buffer residence are
 labelled **Not instrumented**, since the current probes cannot measure them.
 They are not replaced by worker CPU averages or HTTP elapsed time.
+
+## One command, one recording window
+
+For correlated kernel and HTTP recording, run the native CLI with the required
+host privileges, verified nginx master PID and marker module:
+
+```sh
+nginx-inspector start --transport --for 2h --sample 100 \
+  --master-pid 1234 --module /usr/lib/nginx/modules/ngx_http_inspector_module.so
+```
+
+This command stays running. It starts HTTP sampling, arms BPF and reports
+`TRACE_READY`. Both stop at the requested deadline, on SIGINT/SIGTERM, or when
+`nginx-inspector stop` turns capture off. A probe or collector failure stops both
+instead of silently leaving HTTP-only capture. It never reloads nginx. The
+64 MiB trace-output bound and target-generation checks still apply and can end
+the session early. Transport starts allow whole-second durations up to two hours.
+
+`nginx-inspector status` reports HTTP and transport states. Transport status uses
+a 15-second lease, renewed by the live helper; a dead helper cannot leave the UI
+showing indefinite active tracing. The status endpoint is read-only on the private
+viewer; updates retain the loopback-only control restrictions.
+
+Plain `start` retains the existing HTTP-only mode. It does not silently acquire
+host privileges. Replay defaults to **Transport recorded**, which finds up to 100
+retained journeys even after newer HTTP-only requests push them off the recent
+request list. Choose **All recent HTTP requests** to inspect HTTP-only history.

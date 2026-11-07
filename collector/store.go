@@ -64,8 +64,14 @@ func (s *Store) Insert(batch []Event) error {
 	}
 	return tx.Commit()
 }
-func (s *Store) Recent() ([]json.RawMessage, error) {
-	rows, e := s.db.Query("SELECT event FROM events ORDER BY seq DESC LIMIT 100")
+func (s *Store) Recent() ([]json.RawMessage, error)           { return s.recent(false) }
+func (s *Store) RecordedJourneys() ([]json.RawMessage, error) { return s.recent(true) }
+func (s *Store) recent(recorded bool) ([]json.RawMessage, error) {
+	query := "SELECT event FROM events ORDER BY seq DESC LIMIT 100"
+	if recorded {
+		query = "SELECT e.event FROM events e WHERE EXISTS (SELECT 1 FROM transport_records t WHERE t.request_id=e.id AND t.event='request_begin') ORDER BY e.seq DESC LIMIT 100"
+	}
+	rows, e := s.db.Query(query)
 	if e != nil {
 		return nil, e
 	}

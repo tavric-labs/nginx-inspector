@@ -42,7 +42,7 @@ func run(args []string) error {
 		o := collector.TraceOptions{}
 		f.IntVar(&o.MasterPID, "master-pid", 0, "verified host nginx master PID")
 		f.StringVar(&o.Module, "module", "", "absolute path to marker-enabled nginx module")
-		f.DurationVar(&o.Duration, "for", 60*time.Second, "bounded trace duration, 1s..10m")
+		f.DurationVar(&o.Duration, "for", 60*time.Second, "bounded trace duration, 1s..2h")
 		f.IntVar(&o.UDPPort, "udp-port", 19876, "loopback collector transport port")
 		if e := f.Parse(args[1:]); e != nil {
 			return e
@@ -99,8 +99,27 @@ func run(args []string) error {
 		sample := f.Float64("sample", 1, "capture percentage, 0.01..100; default 1")
 		duration := f.String("for", "", "capture duration, e.g. 10m or 1h")
 		once := f.Bool("once", false, "print once")
+		transport := f.Bool("transport", false, "start HTTP and kernel tracing together (host privileges required)")
+		master := f.Int("master-pid", 0, "host nginx master for transport-enabled start")
+		module := f.String("module", "", "marker-enabled module for transport-enabled start")
+		udp := f.Int("udp-port", 19876, "loopback transport ingestion port")
 		if e := f.Parse(args[1:]); e != nil {
 			return e
+		}
+		if *transport {
+			if args[0] != "start" {
+				return fmt.Errorf("--transport requires start")
+			}
+			d, e := time.ParseDuration(*duration)
+			if e != nil {
+				return fmt.Errorf("--transport requires --for, e.g. 2h")
+			}
+			if math.IsNaN(*sample) || math.IsInf(*sample, 0) || *sample < .01 || *sample > 100 {
+				return fmt.Errorf("sample must be 0.01..100 percent")
+			}
+			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+			defer cancel()
+			return collector.RunCaptureTrace(ctx, *url, collector.TraceOptions{MasterPID: *master, Module: *module, Duration: d, UDPPort: *udp}, int(math.Round(*sample*100)), io.Discard, os.Stderr)
 		}
 		path, method := "/api/capture", "GET"
 		var body []byte
@@ -161,6 +180,26 @@ func run(args []string) error {
 			}
 			if r.StatusCode != 200 {
 				return fmt.Errorf("HTTP %d: %s", r.StatusCode, data)
+			}
+			if args[0] == "status" {
+				var httpState any
+				if e = json.Unmarshal(data, &httpState); e != nil {
+					return e
+				}
+				tr, e := client.Get(strings.TrimRight(*url, "/") + "/api/transport/session")
+				if e != nil {
+					return e
+				}
+				var transportState any
+				e = json.NewDecoder(io.LimitReader(tr.Body, 4096)).Decode(&transportState)
+				tr.Body.Close()
+				if e != nil {
+					return e
+				}
+				if tr.StatusCode != 200 {
+					return fmt.Errorf("transport status HTTP %d", tr.StatusCode)
+				}
+				data, _ = json.Marshal(map[string]any{"http": httpState, "transport": transportState})
 			}
 			var pretty bytes.Buffer
 			if e = json.Indent(&pretty, data, "", "  "); e != nil {

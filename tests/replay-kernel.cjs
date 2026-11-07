@@ -8,14 +8,14 @@ const assert=require('node:assert/strict'),fs=require('node:fs');const {chromium
  await page.route('http://inspector.test/**',async route=>{
   const url=new URL(route.request().url()),path=url.pathname;
   if(path==='/api/events')await new Promise(resolve=>setTimeout(resolve,250));
-  const data={'/api/events':events,'/api/summary':{retained:3,window:3,errors:0},'/api/capture':{active:true,sample_permyriad:10000,remaining_seconds:60},'/api/workers':workers};
+  const data={'/api/events':url.searchParams.get('transport')==='1'?[events[1],events[2]]:events,'/api/summary':{retained:3,window:3,errors:0},'/api/capture':{active:true,sample_permyriad:10000,remaining_seconds:60},'/api/workers':workers};
   const html=path==='/'?'collector/viewer.html':path==='/replay/detail'?'collector/journey.html':null;
   let body;if(html)body=fs.readFileSync(html,'utf8');else if(path.startsWith('/api/transport/'))body=JSON.stringify({status:'not_captured',records:[]});else if(path.startsWith('/api/events/')){const e=[...events,archived].find(e=>e.id===path.split('/').pop());if(!e){await route.fulfill({status:404,body:'{}'});return;}body=JSON.stringify(e);}else body=JSON.stringify(data[path]??{});
   await route.fulfill({contentType:html?'text/html':'application/json',body});
  });
  await page.goto('http://inspector.test/');await page.locator('#show-replay').click();
  const flow=page.frameLocator('#rp-flow-frame'),modal=page.locator('#deep-replay-dialog');
- await flow.locator('#component-client').waitFor();await flow.locator('#component-http').waitFor();
+ await flow.locator('#component-client').waitFor();assert.equal(await page.locator('#rp-source').inputValue(),'recorded');assert.equal(await page.locator('.rp-item').filter({hasText:'/new'}).count(),0,'HTTP-only request must not be the default full-flow replay');await page.locator('#rp-source').selectOption('recent');await page.locator('.rp-item').filter({hasText:'/new'}).waitFor();await page.locator('#rp-source').selectOption('recorded');await flow.locator('#component-http').waitFor();
  assert.equal(await modal.evaluate(d=>d.open),false,'HTTP replay starts as drill-down, not root');
  assert.equal(await page.locator('#replay-panel #rp-svg').count(),0,'root Replay must be the full journey');
  assert.equal(new URL(page.url()).pathname,'/','one Replay entry point; no separate journey navigation');

@@ -38,6 +38,7 @@ type Server struct {
 	failure          bool
 	workers          *workerMonitor
 	transportPending chan TransportRecord
+	transportSession TraceSession
 	diagnostics      *WorkerDiagnostics
 }
 
@@ -140,6 +141,15 @@ func (s *Server) handler(readonly bool, port int) http.Handler {
 				fail("invalid capture request", 400)
 				return
 			}
+			if r.URL.Path == "/api/transport/session" {
+				v, e := s.updateTraceSession(raw)
+				if e != nil {
+					fail(e.Error(), 400)
+				} else {
+					reply(v, 200)
+				}
+				return
+			}
 			var p map[string]json.RawMessage
 			if err = json.Unmarshal(raw, &p); err != nil || p == nil || len(p) > 2 {
 				fail("invalid capture request", 400)
@@ -207,6 +217,8 @@ func (s *Server) handler(readonly bool, port int) http.Handler {
 			view := s.workers.snapshot(s.Control.Status().Active)
 			view.Diagnostics = s.diagnostics
 			v = view
+		case "/api/transport/session":
+			v = s.traceSessionStatus(time.Now())
 		case "/api/capture":
 			v = s.Control.Status()
 		case "/health":
@@ -226,7 +238,11 @@ func (s *Server) handler(readonly bool, port int) http.Handler {
 			reply(map[string]any{"status": status, "stats": stats, "capture": s.Control.Status(), "queue": len(s.pending), "transport_queue": len(s.transportPending)}, code)
 			return
 		case "/api/events":
-			v, err = s.Store.Recent()
+			if r.URL.Query().Get("transport") == "1" {
+				v, err = s.Store.RecordedJourneys()
+			} else {
+				v, err = s.Store.Recent()
+			}
 		case "/api/summary":
 			v, err = s.Store.Summary()
 		default:

@@ -101,8 +101,8 @@ func RunTrace(ctx context.Context, o TraceOptions, out, diagnostics io.Writer) e
 	if runtime.GOOS != "linux" || runtime.GOARCH != "amd64" {
 		return fmt.Errorf("this initial tracer supports Linux amd64 only")
 	}
-	if o.Duration%time.Second != 0 || o.Duration < time.Second || o.Duration > 10*time.Minute || o.UDPPort < 1 || o.UDPPort > 65535 || !modulePathPattern.MatchString(o.Module) {
-		return fmt.Errorf("invalid trace options (duration 1s..10m, absolute module path)")
+	if o.Duration%time.Second != 0 || o.Duration < time.Second || o.Duration > 2*time.Hour || o.UDPPort < 1 || o.UDPPort > 65535 || !modulePathPattern.MatchString(o.Module) {
+		return fmt.Errorf("invalid trace options (duration 1s..2h, absolute module path)")
 	}
 	if os.Geteuid() != 0 {
 		return fmt.Errorf("kernel tracing requires separately authorized host privileges")

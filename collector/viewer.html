@@ -68,11 +68,11 @@
   </section>
   <section id="replay-panel" hidden class="panel replay-panel" aria-labelledby="replay-title">
     <div class="panel-heading"><div><h2 id="replay-title">Replay · full request journey <span id="replay-doc"></span></h2><p>Follow the client, kernel queues, socket readiness and worker. Click nginx processing to open its seven-stage HTTP replay.</p></div><span class="connection" id="replay-note"></span></div>
-    <div class="replay-layout">
+    <p id="rp-transport-state" class="rp-hint">Checking kernel tracing status…</p><div class="replay-layout">
       <aside class="replay-side">
         <div class="rp-tabs" role="tablist" aria-label="Request source"><button id="tab-completed" type="button" role="tab" aria-selected="true">Completed <span id="n-completed" class="rp-count">0</span></button><button id="tab-inflight" type="button" role="tab" aria-selected="false">In flight <span id="n-inflight" class="rp-count">0</span></button></div>
         <label class="search"><span class="sr-only">Filter requests</span><input id="rp-search" type="search" placeholder="Filter by path, method or status…" autocomplete="off"></label>
-        <div id="rp-list" class="rp-list" role="list"></div>
+        <label class="rp-hint" for="rp-source">Completed request history</label><select id="rp-source"><option value="recorded">Transport recorded · saved journeys</option><option value="recent">All recent HTTP requests</option></select><p class="rp-hint" id="rp-source-note">Browse saved journeys; the recording state is shown above.</p><div id="rp-list" class="rp-list" role="list"></div>
       </aside>
       <div class="full-request-replay"><p id="rp-flow-empty" class="rp-hint">Pick a request to replay its full journey.</p><iframe id="rp-flow-frame" title="Full request replay: client, kernel queues and nginx worker" hidden></iframe></div>
     </div>
@@ -100,7 +100,7 @@
 (() => {
   'use strict';
   const $ = id => document.getElementById(id);
-  const state = {events:[], paused:false, refreshing:false, loaded:false, detail:null, detailRequest:0, trigger:null};
+  const state = {events:[], recordedEvents:[], transportSession:{}, paused:false, refreshing:false, loaded:false, detail:null, detailRequest:0, trigger:null};
   const numbers = new Intl.NumberFormat(undefined, {maximumFractionDigits:1});
   const text = value => value === null || value === undefined || value === '' ? '—' : String(value);
   const count = value => numbers.format(value ?? 0);
@@ -127,7 +127,7 @@
     $('total').textContent=count(data.retained);$('window-note').textContent=count(data.window)+' requests in the latency window';
     $('errors').textContent=count(data.errors);$('errors').classList.toggle('error',data.errors>0);$('error-note').textContent=(data.window?numbers.format(data.errors/data.window*100):'0')+'% of the latency window';
     for(const p of ['p50','p95','p99'])$(p).textContent=ms(data[p+'_ms']);
-    $('capture').classList.toggle('active',capture.active);$('capture-label').textContent=capture.active?'Capturing · '+numbers.format((capture.sample_permyriad??10000)/100)+'% sample'+(capture.remaining_seconds===null?'':' · '+count(capture.remaining_seconds)+'s remaining'):'Capture stopped';
+    $('capture').classList.toggle('active',capture.active);$('capture-label').textContent=capture.active?(state.transportSession?.active?(state.transportSession.ready?'HTTP + kernel recording · ':'Kernel arming · HTTP recording · '):'HTTP only · ')+numbers.format((capture.sample_permyriad??10000)/100)+'% sample'+(capture.remaining_seconds===null?'':' · '+count(capture.remaining_seconds)+'s remaining'):'Capture stopped';
   }
   let workerEpollOpen=false;
   const workerSectionsOpen=new Map();
@@ -279,7 +279,7 @@
   function nativeSummary(){const events=state.events.filter(e=>e.native),n=events.map(e=>e.native),facts=[['Native events',events.length+' / '+state.events.length],['Worker PIDs seen',new Set(n.map(x=>x.nginx.worker_pid)).size],['Multiple attempts',n.filter(x=>x.attempts.length>1).length],['Body spooled',n.filter(x=>x.request_body.disk_buffered).length],['Child requests',n.reduce((v,x)=>v+x.subrequests.length,0)],['Rate rejections',n.filter(x=>x.policy.rate_limit_status==='REJECTED').length],['Cache HITs',events.filter(e=>e.upstream?.cache_status==='HIT').length],['Bandwidth limited',n.filter(x=>x.policy.limit_rate_bps>0).length]];const wrap=$('native-snapshot');wrap.replaceChildren();for(const [label,value]of facts){const item=node('div','native-fact');item.append(node('strong','',value),node('span','',label));wrap.append(item);}}
   async function refresh() {
     if(state.paused||state.refreshing||document.hidden)return;state.refreshing=true;
-    try{const [s,events,capture,workers]=await Promise.all([json('/api/summary'),json('/api/events'),json('/api/capture'),json('/api/workers')]);state.events=events;nativeSummary();renderWorkers(workers);afterWorkers(workers);const firstLoad=!state.loaded;state.loaded=true;if(firstLoad){const wanted=new URL(location.href).searchParams.get('replay');if(wanted){showView('replay');openReplay('completed',wanted);}}summary(s,capture);renderRows();$('connection').textContent='Connected · live updates';$('connection').className='connection good';$('banner').classList.remove('visible');$('updated').textContent='Updated '+new Date().toLocaleTimeString();}
+    try{const [s,events,capture,workers,recorded,traceSession]=await Promise.all([json('/api/summary'),json('/api/events'),json('/api/capture'),json('/api/workers'),json('/api/events?transport=1'),json('/api/transport/session')]);state.events=events;state.recordedEvents=recorded;state.transportSession=traceSession;nativeSummary();renderWorkers(workers);afterWorkers(workers);const firstLoad=!state.loaded;state.loaded=true;if(firstLoad){const wanted=new URL(location.href).searchParams.get('replay');if(wanted){showView('replay');openReplay('completed',wanted);}}summary(s,capture);renderRows();$('connection').textContent='Connected · live updates';$('connection').className='connection good';$('banner').classList.remove('visible');$('updated').textContent='Updated '+new Date().toLocaleTimeString();}
     catch(error){$('connection').textContent='Connection interrupted';$('connection').className='connection bad';$('banner').textContent='The collector is unavailable. '+(state.loaded?'Showing the last loaded requests.':'Retrying automatically.');$('banner').classList.add('visible');}
     finally{state.refreshing=false;}
   }
@@ -476,16 +476,17 @@
     state.workers=w;state.workersAt=Date.now();const now=Date.now();
     for(const worker of w.live_workers||[])for(const r of worker.requests||[]){let a=SIGHT.get(r.id);if(!a){a={seen:now,log:[]};SIGHT.set(r.id,a);}a.last=now;const l=a.log[a.log.length-1];if(!l||l.phase!==r.phase||l.io!==r.io||l.status!==r.status){a.log.push({at:now,elapsed:r.elapsed_ms,phase:r.phase,io:r.io,status:r.status,bytes:r.response_bytes});if(a.log.length>30)a.log.shift();}}
     for(const [id,a] of SIGHT)if(now-a.last>120000)SIGHT.delete(id);
-    if(!$('replay-panel').hidden){renderReplayList();if(!R.kind&&state.events.length)openReplay('completed',state.events[0].id);else if(R.kind==='inflight')paintReplay();}
+    if(!$('replay-panel').hidden){renderReplayList();if(!R.kind&&completedReplayRows().length)openReplay('completed',completedReplayRows()[0].id);else if(R.kind==='inflight')paintReplay();}
   }
+  function completedReplayRows(){return $('rp-source').value==='recorded'?state.recordedEvents:state.events;}
   function renderReplayList(){
     const list=$('rp-list'),q=$('rp-search').value.trim().toLowerCase();
-    const comp=state.events,live=inflightRows();$('n-completed').textContent=comp.length;$('n-inflight').textContent=live.length;
+    const ts=state.transportSession||{};$('rp-transport-state').textContent=ts.active?(ts.ready?'Kernel tracing active · ':'Kernel tracer arming · ')+Math.max(0,Math.ceil((ts.expires_ms-Date.now())/60000))+' minutes until the shared capture deadline.':'Kernel tracing inactive. Saved transport journeys remain replayable; new HTTP-only requests do not gain kernel history.';const comp=completedReplayRows(),live=inflightRows();$('rp-source-note').textContent=$('rp-source').value==='recorded'?'Saved transport journeys: '+comp.length+' with retained request markers. HTTP sampling alone does not record kernel events.':'HTTP-only observations may have no transport trace. Choose Transport recorded for saved full journeys.';$('n-completed').textContent=comp.length;$('n-inflight').textContent=live.length;
     $('tab-completed').setAttribute('aria-selected',String(R.tab==='completed'));$('tab-inflight').setAttribute('aria-selected',String(R.tab==='inflight'));
     list.replaceChildren();
     if(R.tab==='completed'){
       const rows=comp.filter(e=>!q||[e.path,e.method,e.status].join(' ').toLowerCase().includes(q));
-      if(!rows.length)list.append(node('p','rp-empty',comp.length?'Nothing matches the filter.':'No completed requests yet. Start a capture to record some.'));
+      if(!rows.length)list.append(node('p','rp-empty',comp.length?'Nothing matches the filter.':$('rp-source').value==='recorded'?'No saved transport journeys. HTTP sampling and kernel tracing are separate sessions.':'No completed requests yet. Start a capture to record some.'));
       for(const e of rows){
         const b=node('button','rp-item'+(R.kind==='completed'&&R.id===e.id?' on':''));b.type='button';b.setAttribute('role','listitem');
         const top=node('span','rp-top');top.append(node('span','method',e.method),node('span','status '+statusClass(e.status),e.status),node('span','mono muted',ms(e.duration_ms)+' ms'));
@@ -504,7 +505,7 @@
   }
   function currentModel(){
     if(R.kind==='completed'){
-      const e=state.events.find(x=>x.id===R.id)||R.copy;if(!e)return null;R.copy=e;
+      const e=state.events.find(x=>x.id===R.id)||state.recordedEvents.find(x=>x.id===R.id)||R.copy;if(!e)return null;R.copy=e;
       const first=stageFirsts(e),duration=typeof e.duration_ms==='number'?e.duration_ms:Math.max(...first.filter(v=>v!==null),0);
       const reached=[];first.forEach((v,i)=>{if(v!==null)reached.push(i);});
       return {kind:'completed',e,first,duration,reached,sp:stageSpent(first,duration)};
@@ -516,8 +517,8 @@
     }
     return null;
   }
-  function openReplayPanel(){renderReplayList();if(!R.kind){const first=state.events[0];if(first)openReplay('completed',first.id);else buildMain();}else paintReplay();}
-  async function openReplay(kind,id){stopReplay();R.kind=kind;R.id=id;R.copy=null;R.step=0;R.t=0;R.tab=kind;renderReplayList();if(kind==='completed'&&!state.events.some(e=>e.id===id)){try{const saved=await json('/api/events/'+encodeURIComponent(id));if(R.id!==id||R.kind!==kind)return;R.copy=saved;}catch{if(R.id!==id||R.kind!==kind)return;}}buildMain();renderFullJourney();
+  function openReplayPanel(){renderReplayList();if(!R.kind){const first=completedReplayRows()[0];if(first)openReplay('completed',first.id);else{buildMain();renderFullJourney();}}else paintReplay();}
+  async function openReplay(kind,id){stopReplay();R.kind=kind;R.id=id;R.copy=null;R.step=0;R.t=0;R.tab=kind;renderReplayList();if(kind==='completed'&&![...state.events,...state.recordedEvents].some(e=>e.id===id)){try{const saved=await json('/api/events/'+encodeURIComponent(id));if(R.id!==id||R.kind!==kind)return;R.copy=saved;}catch{if(R.id!==id||R.kind!==kind)return;}}buildMain();renderFullJourney();
     const m=currentModel();if(m&&m.kind==='completed'){if(m.reached.length)R.playing=false;} paintReplay();}
   function stopReplay(){R.playing=false;clearInterval(R.timer);cancelAnimationFrame(R.raf);R.last=0;}
   function seqOf(m){return m.reached.length?m.reached:[0];}
@@ -686,7 +687,7 @@
   setInterval(()=>{if(R.kind==='inflight'&&!$('replay-panel').hidden&&!document.hidden)paintReplay();},1000);
   $('tab-completed').onclick=()=>{R.tab='completed';renderReplayList();};
   $('tab-inflight').onclick=()=>{R.tab='inflight';renderReplayList();};
-  $('rp-search').addEventListener('input',renderReplayList);
+  $('rp-search').addEventListener('input',renderReplayList);$('rp-source').onchange=()=>{stopReplay();R.kind=null;R.id=null;R.copy=null;R.tab='completed';openReplayPanel();};
   $('replay-doc').append(docLink('/dashboard#replay','Replay'));
   function showView(name){$('native-snapshot').closest('section').hidden=name==='replay';$('worker-panel').hidden=name!=='workers';$('requests-panel').hidden=name!=='requests';$('replay-panel').hidden=name!=='replay';document.querySelector('.metrics').hidden=name!=='requests';for(const [id,v] of [['show-requests','requests'],['show-workers','workers'],['show-replay','replay']])$(id).setAttribute('aria-pressed',String(name===v));if(name==='replay')openReplayPanel();else stopReplay();}
   $('show-workers').onclick=()=>showView('workers');$('show-requests').onclick=()=>showView('requests');$('show-replay').onclick=()=>showView('replay');
