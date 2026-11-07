@@ -90,6 +90,9 @@ func TestTransportLeaseExpiryAndPrivacy(t *testing.T) {
 	if e != nil || !v.Active || !v.Ready {
 		t.Fatal(v, e)
 	}
+	if !s.expireTraceSession(time.Now().Add(16*time.Second)) || s.Control.Status().Active {
+		t.Fatal("dead helper left HTTP capture active")
+	}
 	if s.traceSessionStatus(time.Now().Add(16 * time.Second)).Active {
 		t.Fatal("stale lease remained active")
 	}

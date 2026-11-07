@@ -2,6 +2,7 @@ package collector
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -58,4 +59,32 @@ func (s *Server) updateTraceSession(raw []byte) (TraceSession, error) {
 	s.transportSession = v
 	s.mu.Unlock()
 	return v, nil
+}
+
+func (s *Server) expireTraceSession(now time.Time) bool {
+	s.mu.Lock()
+	v := s.transportSession
+	expired := v.Active && (now.UnixMilli() >= v.LeaseUntilMS || now.UnixMilli() >= v.ExpiresMS)
+	if expired {
+		s.transportSession.Active = false
+		s.transportSession.Ready = false
+		s.Control.Stop()
+	}
+	s.mu.Unlock()
+	if expired {
+		s.workers.clear()
+	}
+	return expired
+}
+func (s *Server) monitorTraceSession(ctx context.Context) {
+	tick := time.NewTicker(time.Second)
+	defer tick.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case now := <-tick.C:
+			s.expireTraceSession(now)
+		}
+	}
 }

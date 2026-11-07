@@ -370,8 +370,9 @@ func (s *Server) Run(ctx context.Context) error {
 	defer cancel()
 	defer s.closeResources()
 	var wg sync.WaitGroup
-	wg.Add(4)
+	wg.Add(5)
 	go func() { defer wg.Done(); s.workers.run(ctx) }()
+	go func() { defer wg.Done(); s.monitorTraceSession(ctx) }()
 	go func() { defer wg.Done(); s.receive(ctx) }()
 	go func() { defer wg.Done(); s.persist() }()
 	go func() { defer wg.Done(); s.persistTransport() }()
