@@ -85,7 +85,7 @@ events=get('/api/events');assert len(events)>=20
 views=[get('/api/transport/'+e['id']) for e in events]
 matched=[v for v in views if v['status']=='correlated_connection'];assert len(matched)>=20,views[:2]
 names={r['event'] for v in matched for r in v['records']}
-assert {'accept','request_begin','request_end','read','register','ready','write','socket','network_rx','read_error','write_error'}<=names,names
+assert {'accept','request_begin','request_end','read','register','ready','write','socket','network_rx','kernel_read','write_error'}<=names,names
 assert any(v['connection_shared'] for v in matched), 'keepalive markers did not share a generation'
 boundaries=[r for v in matched for r in v['records'] if r['event']=='accept' and int(r.get('queued_ns','0'))>0]
 if boundaries:
@@ -97,14 +97,15 @@ else:
  print('::warning::Optional queue/handoff hooks were not observed on this kernel. Exact queue timings remain unavailable; core accept/epoll/read/request correlation is tested.')
 snapshots=[r['socket'] for v in matched for r in v['records'] if r['event']=='socket'];assert snapshots and all(s['state']<=32 for s in snapshots)
 assert any(r.get('errno')==11 for v in matched for r in v['records'] if r['event']=='write_error'),'no captured write backpressure'
-cpu=[r for v in matched for r in v['records'] if r['event']=='network_rx' and 'on_cpu_ns' in r]
+cpu=[r for v in matched for r in v['records'] if r['event'] in ('network_rx','kernel_read') and 'on_cpu_ns' in r]
 assert cpu,'no callback CPU estimates captured'
 assert all(int(r['on_cpu_ns'])+int(r['off_cpu_ns'])+int(r['irq_handler_ns'])<=int(r['duration_ns']) for r in cpu)
 residence=[r for v in matched for r in v['records'] if r['event']=='buffer_residence']
 assert residence,'no in-order byte ranges matched queue and consumption boundaries'
 assert all(0<=int(r['residence_min_ns'])<=int(r['residence_max_ns']) and r['bytes']>0 and 1<=r['matched_ranges']<=8 for r in residence)
 print('ACCOUNTING COVERAGE: callback CPU estimates',len(cpu),'byte-residence ranges',len(residence))
-print('DEEP COVERAGE: response writes, EAGAIN read/write, socket accounting and TCP receive callbacks observed')
+print('READ ERROR COVERAGE:',sum(r['event']=='read_error' for v in matched for r in v['records']),'(a short read can make nginx wait without another syscall)')
+print('DEEP COVERAGE: response writes, write EAGAIN, socket accounting and TCP receive/read processors observed')
 health=get('/health');assert health['stats'].get('transport_invalid',0)==0
 print('PASS: real kernel accept/epoll/read records joined to native request IDs; keepalive shares a connection; results unchanged.')
 PY

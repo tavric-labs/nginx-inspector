@@ -180,20 +180,26 @@ and [socket-state tracepoint](https://github.com/torvalds/linux/blob/v6.8/includ
 
 ## Receive CPU estimate and byte-residence bounds
 
-For the outermost scoped TCP receive callback, the tracer brackets elapsed time
+For the outermost scoped TCP receive callback or `tcp_recvmsg` read processor,
+the tracer brackets elapsed time
 and tracks scheduler switch-out/switch-in plus interrupt-handler entry/exit.
 The on-CPU estimate excludes those observed off-CPU and interrupt intervals.
-Nested callbacks can lack a separate CPU estimate to avoid double counting.
+Nested processors can lack a separate CPU estimate to avoid double counting.
+A read processor that migrates CPUs keeps its elapsed record but omits CPU
+accounting. Receive callback CPU fields are emitted only after the socket has
+a verified accepting worker/FD; early queue evidence can still be matched later.
 These are trace-boundary estimates with instrumentation overhead, not Linux CPU
 billing for an HTTP request, and not all NIC/IP/receive-stack work. The replay
 shows how many retained callbacks have accounting.
 
 The residence tracker keeps at most eight pending ranges per identified socket.
 It uses TCP receive/consume sequence state internally, emitting only byte counts
-and duration bounds. It accepts data becoming contiguous during an established
-receive callback only when no out-of-order queue is present and consumption did
-not advance inside that callback. Closing/FIN transitions and ambiguous ranges
-are excluded. No TCP sequence numbers, headers, or payload bytes are emitted.
+and duration bounds. It accepts data becoming contiguous during a receive callback only when no
+out-of-order queue is present, TCP ends ESTABLISHED and consumption did not
+advance inside that callback. Closing/FIN transitions and ambiguous ranges are
+excluded. Child sockets are first identified through the verified listener;
+this can retain receive-queue brackets before nginx accepts them. An internal
+socket epoch keeps those ranges distinct from a reused descriptor. No TCP sequence numbers, headers, or payload bytes are emitted.
 
 A later `tcp_recvmsg` consumption matches overlaps, including partial reads and
 sequence wrap within the bounded TCP window. Queue insertion occurred between
@@ -213,3 +219,9 @@ To preserve an existing recording window during a reviewed helper replacement,
 use `start --transport --until 2026-12-01T14:00:00Z` with the verified module/master
 options. This synthetic example is an absolute stop time. `--until` and `--for`
 are mutually exclusive; past deadlines or ones over two hours away are rejected.
+
+
+Socket accounting fields are sampled during a probe rather than atomically
+across the entire TCP structure. They are observations, not invariants to combine
+into an exact per-request memory or latency equation. Buffer ranges are published
+as immutable records so concurrent ingress cannot mix range timestamps and offsets.

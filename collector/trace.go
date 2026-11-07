@@ -282,11 +282,11 @@ func traceProgram(o TraceOptions, pids []int, inodes []uint64, session string) s
 
 	// Listener socket inode is verified against the selected master's ss ownership.
 	fmt.Fprintf(&b, `kprobe:inet_csk_reqsk_queue_hash_add { $sk=(struct sock*)arg0; $so=$sk->sk_socket; if($so!=0){$f=$so->file;if($f!=0){$ino=$f->f_inode->i_ino;if(%s){@syn[(uint64)arg1]=nsecs;}}}}
-kprobe:inet_csk_complete_hashdance { $sk=(struct sock*)arg0;$so=$sk->sk_socket;if($so!=0){$f=$so->file;if($f!=0){$ino=$f->f_inode->i_ino;if(%s){@handoff_req[tid,cpu]=(uint64)arg2;@handoff_syn[tid,cpu]=@syn[(uint64)arg2];@queued[(uint64)arg1]=nsecs;@qsrc[(uint64)arg1]=(uint64)2;@synchild[(uint64)arg1]=@syn[(uint64)arg2];}}}}
+kprobe:inet_csk_complete_hashdance { $sk=(struct sock*)arg0;$so=$sk->sk_socket;if($so!=0){$f=$so->file;if($f!=0){$ino=$f->f_inode->i_ino;if(%s){@handoff_req[tid,cpu]=(uint64)arg2;@handoff_syn[tid,cpu]=@syn[(uint64)arg2];@nginx_candidate[(uint64)arg1]=(uint64)1;if(!@sk_epoch[(uint64)arg1]){@sk_epoch[(uint64)arg1]=nsecs;}@queued[(uint64)arg1]=nsecs;@qsrc[(uint64)arg1]=(uint64)2;@synchild[(uint64)arg1]=@syn[(uint64)arg2];}}}}
 kretprobe:inet_csk_complete_hashdance {delete(@handoff_req[tid,cpu]);delete(@handoff_syn[tid,cpu]);}
 kprobe:inet_csk_reqsk_queue_add { $sk=(struct sock*)arg0;$so=$sk->sk_socket;if($so!=0){$f=$so->file;if($f!=0){$ino=$f->f_inode->i_ino;if(%s){@queued[(uint64)arg2]=nsecs;@qsrc[(uint64)arg2]=(uint64)1;@synchild[(uint64)arg2]=(uint64)0;if(@handoff_req[tid,cpu]==(uint64)arg1){@synchild[(uint64)arg2]=@handoff_syn[tid,cpu];}delete(@syn[(uint64)arg1]);}}}}
 kprobe:inet_csk_reqsk_queue_drop {delete(@syn[(uint64)arg1]);}
-kprobe:sk_free,kprobe:__sk_free {delete(@qsrc[(uint64)arg0]);delete(@queued[(uint64)arg0]);delete(@synchild[(uint64)arg0]);if(@skpid[(uint64)arg0]){%s}delete(@skpid[(uint64)arg0]);delete(@skfd[(uint64)arg0]);delete(@skgen[(uint64)arg0]);}
+kprobe:sk_free,kprobe:__sk_free {delete(@qsrc[(uint64)arg0]);delete(@queued[(uint64)arg0]);delete(@synchild[(uint64)arg0]);if(@skpid[(uint64)arg0]||@nginx_candidate[(uint64)arg0]){%s}delete(@skpid[(uint64)arg0]);delete(@skfd[(uint64)arg0]);delete(@skgen[(uint64)arg0]);delete(@sk_epoch[(uint64)arg0]);delete(@nginx_candidate[(uint64)arg0]);}
 kprobe:inet_csk_accept /%s/ { @accepting[tid]=1; }
 kretprobe:inet_csk_accept /%s && @accepting[tid]/ {if(retval!=0){@acceptedsk[tid]=(uint64)retval;@aq[tid]=@queued[(uint64)retval];@aqsrc[tid]=@qsrc[(uint64)retval];delete(@qsrc[(uint64)retval]);@as[tid]=@synchild[(uint64)retval];delete(@queued[(uint64)retval]);delete(@synchild[(uint64)retval]);}delete(@accepting[tid]);}
 `, listen, listen, listen, bufferSocketCleanup(), scope, scope)

@@ -14,36 +14,37 @@ import (
 // Metadata only. Monotonic nanoseconds are decimal strings to preserve precision
 // in browsers. Host PID + FD + generation + session prevents FD-reuse joins.
 type TransportRecord struct {
-	Schema        int                `json:"schema"`
-	Kind          string             `json:"kind"`
-	Session       string             `json:"session"`
-	Master        int                `json:"master_pid"`
-	HostPID       int                `json:"host_pid"`
-	FD            int                `json:"fd"`
-	Generation    string             `json:"generation"`
-	At            string             `json:"at_ns"`
-	Event         string             `json:"event"`
-	RequestID     string             `json:"request_id,omitempty"`
-	RequestNumber int64              `json:"request_number,omitempty"`
-	Duration      string             `json:"duration_ns,omitempty"`
-	Queued        string             `json:"queued_ns,omitempty"`
-	Syn           string             `json:"syn_ns,omitempty"`
-	Bytes         int64              `json:"bytes,omitempty"`
-	Flags         uint32             `json:"flags,omitempty"`
-	QueueSource   int                `json:"queue_source,omitempty"`
-	Operation     string             `json:"operation,omitempty"`
-	Errno         int                `json:"errno,omitempty"`
-	CPU           *int               `json:"cpu,omitempty"`
-	Socket        *SocketObservation `json:"socket,omitempty"`
-	FromState     uint8              `json:"from_state,omitempty"`
-	ToState       uint8              `json:"to_state,omitempty"`
-	OnCPU         string             `json:"on_cpu_ns,omitempty"`
-	OffCPU        string             `json:"off_cpu_ns,omitempty"`
-	IRQ           string             `json:"irq_handler_ns,omitempty"`
-	ResidenceMin  string             `json:"residence_min_ns,omitempty"`
-	ResidenceMax  string             `json:"residence_max_ns,omitempty"`
-	MatchedRanges uint8              `json:"matched_ranges,omitempty"`
-	QueueOverruns uint64             `json:"queue_overruns,omitempty"`
+	Schema         int                `json:"schema"`
+	Kind           string             `json:"kind"`
+	Session        string             `json:"session"`
+	Master         int                `json:"master_pid"`
+	HostPID        int                `json:"host_pid"`
+	FD             int                `json:"fd"`
+	Generation     string             `json:"generation"`
+	At             string             `json:"at_ns"`
+	Event          string             `json:"event"`
+	RequestID      string             `json:"request_id,omitempty"`
+	RequestNumber  int64              `json:"request_number,omitempty"`
+	Duration       string             `json:"duration_ns,omitempty"`
+	Queued         string             `json:"queued_ns,omitempty"`
+	Syn            string             `json:"syn_ns,omitempty"`
+	Bytes          int64              `json:"bytes,omitempty"`
+	Flags          uint32             `json:"flags,omitempty"`
+	QueueSource    int                `json:"queue_source,omitempty"`
+	Operation      string             `json:"operation,omitempty"`
+	Errno          int                `json:"errno,omitempty"`
+	CPU            *int               `json:"cpu,omitempty"`
+	Socket         *SocketObservation `json:"socket,omitempty"`
+	FromState      uint8              `json:"from_state,omitempty"`
+	ToState        uint8              `json:"to_state,omitempty"`
+	OnCPU          string             `json:"on_cpu_ns,omitempty"`
+	OffCPU         string             `json:"off_cpu_ns,omitempty"`
+	IRQ            string             `json:"irq_handler_ns,omitempty"`
+	ResidenceMin   string             `json:"residence_min_ns,omitempty"`
+	ResidenceMax   string             `json:"residence_max_ns,omitempty"`
+	MatchedRanges  uint8              `json:"matched_ranges,omitempty"`
+	QueueOverruns  uint64             `json:"queue_overruns,omitempty"`
+	KernelFunction string             `json:"kernel_function,omitempty"`
 }
 
 // Socket snapshots describe one shared TCP connection, never a request's memory.
@@ -100,7 +101,7 @@ func ValidateTransport(raw []byte) (TransportRecord, error) {
 			return t, fmt.Errorf("invalid session")
 		}
 	}
-	if !contains([]string{"accept", "register", "ready", "read", "read_error", "write", "write_error", "socket", "network_rx", "buffer_residence", "tcp_state", "tcp_retransmit", "close", "request_begin", "request_end"}, t.Event) {
+	if !contains([]string{"accept", "register", "ready", "read", "read_error", "write", "write_error", "socket", "network_rx", "kernel_read", "buffer_residence", "tcp_state", "tcp_retransmit", "close", "request_begin", "request_end"}, t.Event) {
 		return t, fmt.Errorf("unknown transport event")
 	}
 	if t.FromState > 32 || t.ToState > 32 || t.Event != "tcp_state" && (t.FromState != 0 || t.ToState != 0) {
@@ -112,7 +113,7 @@ func ValidateTransport(raw []byte) (TransportRecord, error) {
 	if t.Operation != "" && !contains([]string{"read", "readv", "recvfrom", "recvmsg", "write", "writev", "sendto", "sendmsg", "sendfile"}, t.Operation) {
 		return t, fmt.Errorf("unknown syscall operation")
 	}
-	if t.CPU != nil && t.Event != "network_rx" {
+	if t.CPU != nil && t.Event != "network_rx" && t.Event != "kernel_read" {
 		return t, fmt.Errorf("CPU attribution outside receive callback")
 	}
 	if t.Operation != "" {
@@ -129,10 +130,10 @@ func ValidateTransport(raw []byte) (TransportRecord, error) {
 	if failed != (t.Errno > 0) || failed && t.Bytes != 0 {
 		return t, fmt.Errorf("invalid error result")
 	}
-	if (failed || t.Event == "write" || t.Event == "network_rx") && t.Duration == "" {
+	if (failed || t.Event == "write" || (t.Event == "network_rx" || t.Event == "kernel_read")) && t.Duration == "" {
 		return t, fmt.Errorf("missing elapsed boundary")
 	}
-	if t.Event == "network_rx" && t.CPU == nil {
+	if (t.Event == "network_rx" || t.Event == "kernel_read") && t.CPU == nil {
 		return t, fmt.Errorf("missing receive CPU")
 	}
 	if t.Event == "socket" && t.Socket == nil {
@@ -144,7 +145,7 @@ func ValidateTransport(raw []byte) (TransportRecord, error) {
 		}
 	}
 	if t.OnCPU != "" || t.OffCPU != "" || t.IRQ != "" {
-		if t.Event != "network_rx" || !decimalNS(t.OnCPU, false) || !decimalNS(t.OffCPU, false) || !decimalNS(t.IRQ, false) {
+		if (t.Event != "network_rx" && t.Event != "kernel_read") || !decimalNS(t.OnCPU, false) || !decimalNS(t.OffCPU, false) || !decimalNS(t.IRQ, false) {
 			return t, fmt.Errorf("invalid receive CPU accounting")
 		}
 		total, _ := strconv.ParseUint(t.Duration, 10, 64)
@@ -167,6 +168,11 @@ func ValidateTransport(raw []byte) (TransportRecord, error) {
 	} else if t.ResidenceMin != "" || t.ResidenceMax != "" || t.MatchedRanges != 0 || t.QueueOverruns != 0 {
 		return t, fmt.Errorf("byte-residence metadata on another event")
 	}
+	if t.KernelFunction != "" {
+		if t.Event == "kernel_read" && t.KernelFunction != "tcp_recvmsg" || t.Event == "network_rx" && !contains([]string{"tcp_rcv_established", "tcp_rcv_state_process"}, t.KernelFunction) || t.Event != "kernel_read" && t.Event != "network_rx" {
+			return t, fmt.Errorf("kernel function/event mismatch")
+		}
+	}
 	marker := t.Event == "request_begin" || t.Event == "request_end"
 	if marker {
 		if !idPattern.MatchString(t.RequestID) || t.RequestID == "" || t.RequestNumber < 1 {
@@ -182,8 +188,8 @@ func ValidateTransport(raw []byte) (TransportRecord, error) {
 	}
 	if t.Event == "buffer_residence" {
 		hi, _ := strconv.ParseUint(t.ResidenceMax, 10, 64)
-		if hi > at-gen {
-			return t, fmt.Errorf("byte residence predates observed socket")
+		if hi > at {
+			return t, fmt.Errorf("byte residence predates monotonic time origin")
 		}
 	}
 

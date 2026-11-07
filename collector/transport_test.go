@@ -206,6 +206,20 @@ func TestReceiveCPUAndResidenceBounds(t *testing.T) {
 	if _, e := ValidateTransport(encoded(v)); e != nil {
 		t.Fatal(e)
 	}
+	read := v
+	read.Event = "kernel_read"
+	read.KernelFunction = "tcp_recvmsg"
+	if _, e := ValidateTransport(encoded(read)); e != nil {
+		t.Fatal(e)
+	}
+	early := traceFixture("buffer_residence", "", "250", "300")
+	early.Bytes = 16
+	early.MatchedRanges = 1
+	early.ResidenceMin = "0"
+	early.ResidenceMax = "100"
+	if _, e := ValidateTransport(encoded(early)); e != nil {
+		t.Fatal("pre-accept queue time must remain valid", e)
+	}
 	v.IRQ = "20"
 	if _, e := ValidateTransport(encoded(v)); e == nil {
 		t.Fatal("CPU components exceeded elapsed callback")
@@ -222,7 +236,7 @@ func TestReceiveCPUAndResidenceBounds(t *testing.T) {
 	if _, e := ValidateTransport(encoded(q)); e != nil {
 		t.Fatal(e)
 	}
-	for _, mutate := range []func(*TransportRecord){func(v *TransportRecord) { v.ResidenceMin = "101" }, func(v *TransportRecord) { v.ResidenceMax = "201" }, func(v *TransportRecord) { v.MatchedRanges = 9 }, func(v *TransportRecord) { v.Bytes = 0 }, func(v *TransportRecord) { v.ResidenceMax = "-1" }, func(v *TransportRecord) { v.RequestID = "11-1-2-3"; v.RequestNumber = 1 }} {
+	for _, mutate := range []func(*TransportRecord){func(v *TransportRecord) { v.ResidenceMin = "101" }, func(v *TransportRecord) { v.ResidenceMax = "301" }, func(v *TransportRecord) { v.MatchedRanges = 9 }, func(v *TransportRecord) { v.Bytes = 0 }, func(v *TransportRecord) { v.ResidenceMax = "-1" }, func(v *TransportRecord) { v.RequestID = "11-1-2-3"; v.RequestNumber = 1 }} {
 		bad := q
 		mutate(&bad)
 		if _, e := ValidateTransport(encoded(bad)); e == nil {
