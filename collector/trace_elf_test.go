@@ -4,10 +4,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
 func TestMarkerABIExports(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("Linux ELF shared object")
+	}
 	cc, err := exec.LookPath("cc")
 	if err != nil {
 		t.Skip("C compiler unavailable")

@@ -1,5 +1,25 @@
 # Installation
 
+## Quick automated setup and reload
+
+Once the binary is installed (and either a prebuilt `.so` or matching nginx development
+headers at `/usr/share/nginx/src` are present), `setup` and `reload` automate the host
+steps, pre-create the 8-byte control file with worker-readable permissions (`0644`)
+before nginx workers start, install an immutable versioned `.so` generation, validate
+`nginx -t` with automatic rollback on failure, and reload nginx:
+
+```sh
+nginx-inspector setup --control-file /var/lib/nginx-inspector/control \
+  --db /var/lib/inspector-data/events.sqlite3
+nginx-inspector doctor --control-file /var/lib/nginx-inspector/control
+```
+
+If run as an unprivileged user when `/etc/nginx` or `/usr/lib/nginx/modules` requires
+root, `nginx-inspector setup` and `nginx-inspector reload` request `sudo` only for the
+host module/config/reload step while keeping the control file and database directory
+owned by the collector user. Use `--dry-run` to preview the plan and required privileges
+without modifying the host.
+
 ## 1. Install the Go executable
 
 Download the matching archive and `SHA256SUMS` from

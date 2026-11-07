@@ -17,17 +17,23 @@ built against your exact nginx version and vendor patches. Follow the
 [installation guide](https://nginx-inspector.tavric-labs.net/install) for the one-time setup.
 
 ```sh
+# One-command host setup / module reload (prompts for sudo only if needed):
+nginx-inspector setup --control-file ./data/control --db ./data/events.sqlite3
+nginx-inspector doctor --control-file ./data/control
+
+# Start the unprivileged collector:
 nginx-inspector serve --db ./data/events.sqlite3 --control-file ./data/control
-# In another terminal:
-nginx-inspector start --for 10m
+# In another terminal (or from the localhost web header):
+nginx-inspector start --all --for 30s
 nginx-inspector status
 nginx-inspector stop
 ```
 
-Open **http://127.0.0.1:19877/**. Use `start` without `--for` for a manual session,
-or `--for 1h` for an automatic stop. Sessions default to 1% sampling; use
-`start --sample 100 --for 30s` for an explicit short full capture. History remains
-available after capture stops.
+Open **http://127.0.0.1:19877/**. On loopback, the header includes **100% · Trace all**
+and timed **Start / Stop capture** controls. From the CLI, use `start` without `--for`
+for a manual 1% session, `start --all --for 30s` (alias for `--sample 100`) for a short
+full HTTP capture, or `start --all --transport --for 30s --sudo` for correlated HTTP +
+kernel transport capture. History remains available after capture stops.
 
 ## What you can inspect
 

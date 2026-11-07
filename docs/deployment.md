@@ -19,7 +19,23 @@ root filesystem, no added capabilities, `no-new-privileges`, an unprivileged UID
 and explicit memory/CPU/pid limits. Mount only the executable, data and control
 paths required by the service. `deploy/Dockerfile` provides a compiled runtime image.
 
-## Upgrade sequence
+## Automated module reload (`nginx-inspector reload`)
+
+To compile or install a new module generation with a distinct `ngx_http_inspector_<gen>_module`
+symbol (including the `ngx_inspector_request_begin` / `ngx_inspector_request_end` markers
+used for correlated kernel transport capture), update `load_module`, validate `nginx -t`
+(with automatic config rollback on failure), reload nginx, and optionally start a full
+capture immediately:
+
+```sh
+nginx-inspector reload --build-module --all --for 30s
+```
+
+Use `nginx-inspector doctor` at any time to verify the privilege boundaries, 8-byte
+control file, directory traversal permissions, marker ABI, `/proc` worker visibility,
+and collector health.
+
+## Manual upgrade sequence
 
 1. Stop capture and confirm inactive state.
 2. Back up the database consistently with SQLite's backup API or a stopped collector.
