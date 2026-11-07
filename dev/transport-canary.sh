@@ -35,24 +35,45 @@ pid $task_dir/nginx.pid;
 error_log $task_dir/error.log notice;
 events {worker_connections 128;}
 http {access_log off;client_body_temp_path $task_dir/client;proxy_temp_path $task_dir/proxy;inspector on;inspector_sample 10000;inspector_port 19576;inspector_control $task_dir/control;
-server {listen 127.0.0.1:19580;location / {return 200 "transport-canary";}}}
+server {listen 127.0.0.1:19580;sendfile on;location /bulk {alias $task_dir/bulk.bin;} location / {return 200 "transport-canary";}}}
 EOF
+truncate -s 8M "$task_dir/bulk.bin"
 "$task_dir/nginx-inspector" serve --db "$task_dir/events.sqlite3" --control-file "$task_dir/control" --http-port 19577 --udp-port 19576 --proc-root /proc --nginx-pid-file "$task_dir/nginx.pid" > "$task_dir/collector.log" 2>&1 &
 collector_pid=$!
 for i in $(seq 1 50); do if curl -fsS http://127.0.0.1:19577/health >/dev/null; then break; fi; sleep .1; done
 /usr/sbin/nginx -p "$task_dir/" -c "$task_dir/nginx.conf"
 curl -fsS http://127.0.0.1:19577/api/capture/start -H 'Content-Type: application/json' -d '{"seconds":120,"sample_permyriad":10000}'
-sudo "$task_dir/nginx-inspector" trace --for 12s --master-pid "$(cat "$task_dir/nginx.pid")" --module "$task_dir/inspector.so" --udp-port 19576 > "$task_dir/trace.ndjson" 2> "$task_dir/trace.log" &
+sudo "$task_dir/nginx-inspector" trace --for 30s --master-pid "$(cat "$task_dir/nginx.pid")" --module "$task_dir/inspector.so" --udp-port 19576 > "$task_dir/trace.ndjson" 2> "$task_dir/trace.log" &
 trace_pid=$!
 for i in $(seq 1 600); do if rg -q TRACE_READY "$task_dir/trace.log"; then break; fi; if ! kill -0 "$trace_pid" 2>/dev/null; then cat "$task_dir/trace.log"; exit 1; fi; sleep .1; done
 rg -q TRACE_READY "$task_dir/trace.log"
 python3 - <<'PY'
-import http.client,time
+import http.client,time,socket
 for i in range(12):
  c=http.client.HTTPConnection('127.0.0.1',19580,timeout=3)
  for j in range(2):
   c.request('GET','/transport-%d-%d'%(i,j));r=c.getresponse();assert r.status==200 and r.read()==b'transport-canary';time.sleep(.12)
  c.close()
+# An incomplete request header makes a nonblocking read run out of bytes.
+s=socket.create_connection(('127.0.0.1',19580),timeout=10)
+s.sendall(b'GET /partial HTTP/1.1\r\nHost: local\r\nX-Probe: ');time.sleep(.25)
+s.sendall(b'ok\r\nConnection: close\r\n\r\n');data=bytearray()
+while True:
+ b=s.recv(65536)
+ if not b:break
+ data.extend(b)
+assert b'200 OK' in data and data.endswith(b'transport-canary');s.close()
+# A client that briefly stops reading exercises response-side backpressure.
+s=socket.socket();s.setsockopt(socket.SOL_SOCKET,socket.SO_RCVBUF,65536);s.settimeout(15);s.connect(('127.0.0.1',19580))
+s.sendall(b'GET /bulk HTTP/1.1\r\nHost: local\r\nConnection: close\r\n\r\n');time.sleep(1)
+s.setsockopt(socket.SOL_SOCKET,socket.SO_RCVBUF,2*1024*1024)
+data=bytearray()
+while True:
+ b=s.recv(262144)
+ if not b:break
+ data.extend(b)
+s.close();headers,body=data.split(b'\r\n\r\n',1)
+assert b'200 OK' in headers and len(body)==8*1024*1024 and not any(body),'response bytes changed'
 PY
 if ! wait "$trace_pid"; then cat "$task_dir/trace.log"; exit 1; fi
 trace_pid=""
@@ -64,7 +85,7 @@ events=get('/api/events');assert len(events)>=20
 views=[get('/api/transport/'+e['id']) for e in events]
 matched=[v for v in views if v['status']=='correlated_connection'];assert len(matched)>=20,views[:2]
 names={r['event'] for v in matched for r in v['records']}
-assert {'accept','request_begin','request_end','read','register','ready'}<=names,names
+assert {'accept','request_begin','request_end','read','register','ready','write','socket','network_rx','read_error','write_error'}<=names,names
 assert any(v['connection_shared'] for v in matched), 'keepalive markers did not share a generation'
 boundaries=[r for v in matched for r in v['records'] if r['event']=='accept' and int(r.get('queued_ns','0'))>0]
 if boundaries:
@@ -74,6 +95,9 @@ if boundaries:
  print('QUEUE COVERAGE: captured labelled queue/handoff boundaries:',len(boundaries))
 else:
  print('::warning::Optional queue/handoff hooks were not observed on this kernel. Exact queue timings remain unavailable; core accept/epoll/read/request correlation is tested.')
+snapshots=[r['socket'] for v in matched for r in v['records'] if r['event']=='socket'];assert snapshots and all(s['state']<=32 for s in snapshots)
+assert any(r.get('errno')==11 for v in matched for r in v['records'] if r['event']=='write_error'),'no captured write backpressure'
+print('DEEP COVERAGE: response writes, EAGAIN read/write, socket accounting and TCP receive callbacks observed')
 health=get('/health');assert health['stats'].get('transport_invalid',0)==0
 print('PASS: real kernel accept/epoll/read records joined to native request IDs; keepalive shares a connection; results unchanged.')
 PY

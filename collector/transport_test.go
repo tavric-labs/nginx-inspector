@@ -131,3 +131,66 @@ func TestReplayEmbeddingPolicy(t *testing.T) {
 		}
 	}
 }
+
+func TestDeepConnectionMetadata(t *testing.T) {
+	cpu := 0
+	cases := []TransportRecord{
+		{Event: "read_error", Operation: "recvfrom", Errno: 11, Duration: "10"},
+		{Event: "write", Operation: "writev", Bytes: 1024, Duration: "20"},
+		{Event: "write_error", Operation: "sendfile", Errno: 11, Duration: "30"},
+		{Event: "network_rx", CPU: &cpu, Duration: "40"},
+		{Event: "socket", Socket: &SocketObservation{Point: "recvmsg_return", State: 1, ReceiveMemory: 0, SendQueuedMemory: 0, CongestionWindow: 10}},
+		{Event: "tcp_state", FromState: 1, ToState: 8},
+		{Event: "tcp_retransmit"},
+	}
+	for _, v := range cases {
+		base := traceFixture(v.Event, "", "100", "200")
+		base.Operation = v.Operation
+		base.Errno = v.Errno
+		base.Duration = v.Duration
+		base.Bytes = v.Bytes
+		base.CPU = v.CPU
+		base.Socket = v.Socket
+		base.FromState = v.FromState
+		base.ToState = v.ToState
+		if _, e := ValidateTransport(encoded(base)); e != nil {
+			t.Fatalf("%s: %v", v.Event, e)
+		}
+		base.RequestID = "11-1-2-3"
+		base.RequestNumber = 1
+		if _, e := ValidateTransport(encoded(base)); e == nil {
+			t.Fatal("assigned shared kernel work to a request", v.Event)
+		}
+	}
+	invalid := []TransportRecord{
+		{Event: "write", Operation: "recvfrom", Duration: "1"},
+		{Event: "read_error", Operation: "read", Duration: "1"},
+		{Event: "network_rx", Duration: "1"},
+		{Event: "socket", Socket: &SocketObservation{Point: "payload"}},
+		{Event: "socket", Socket: &SocketObservation{Point: "sendmsg_return", ReceiveMemory: 1 << 45}},
+		{Event: "tcp_state", FromState: 33, ToState: 1},
+	}
+	for _, v := range invalid {
+		base := traceFixture(v.Event, "", "100", "200")
+		base.Operation = v.Operation
+		base.Errno = v.Errno
+		base.Duration = v.Duration
+		base.Socket = v.Socket
+		base.FromState = v.FromState
+		base.ToState = v.ToState
+		if _, e := ValidateTransport(encoded(base)); e == nil {
+			t.Fatal("invalid deep metadata accepted", v)
+		}
+	}
+	script := traceProgram(TraceOptions{MasterPID: 10, Module: "/tmp/inspector.so", Duration: time.Minute}, []int{11}, []uint64{123}, strings.Repeat("a", 32))
+	for _, want := range []string{"tcp_rcv_established", "tcp_recvmsg", "tcp_sendmsg", "sys_enter_sendfile*", "read_error", "write_error", "sk_backlog.rmem_alloc.counter", "tcp:tcp_retransmit_skb", "sock:inet_sock_set_state", "clear(@rxgen)", "delete(@skpid[(uint64)arg0])"} {
+		if !strings.Contains(script, want) {
+			t.Fatal("missing deep probe or cleanup", want)
+		}
+	}
+	for _, bad := range []string{"args->buf", "args->iov", "skb->data", "%p", "daddr", "saddr"} {
+		if strings.Contains(script, bad) {
+			t.Fatal("private packet/buffer/endpoint access", bad)
+		}
+	}
+}

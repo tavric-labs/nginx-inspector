@@ -13,23 +13,44 @@ import (
 // Metadata only. Monotonic nanoseconds are decimal strings to preserve precision
 // in browsers. Host PID + FD + generation + session prevents FD-reuse joins.
 type TransportRecord struct {
-	Schema        int    `json:"schema"`
-	Kind          string `json:"kind"`
-	Session       string `json:"session"`
-	Master        int    `json:"master_pid"`
-	HostPID       int    `json:"host_pid"`
-	FD            int    `json:"fd"`
-	Generation    string `json:"generation"`
-	At            string `json:"at_ns"`
-	Event         string `json:"event"`
-	RequestID     string `json:"request_id,omitempty"`
-	RequestNumber int64  `json:"request_number,omitempty"`
-	Duration      string `json:"duration_ns,omitempty"`
-	Queued        string `json:"queued_ns,omitempty"`
-	Syn           string `json:"syn_ns,omitempty"`
-	Bytes         int64  `json:"bytes,omitempty"`
-	Flags         uint32 `json:"flags,omitempty"`
-	QueueSource   int    `json:"queue_source,omitempty"`
+	Schema        int                `json:"schema"`
+	Kind          string             `json:"kind"`
+	Session       string             `json:"session"`
+	Master        int                `json:"master_pid"`
+	HostPID       int                `json:"host_pid"`
+	FD            int                `json:"fd"`
+	Generation    string             `json:"generation"`
+	At            string             `json:"at_ns"`
+	Event         string             `json:"event"`
+	RequestID     string             `json:"request_id,omitempty"`
+	RequestNumber int64              `json:"request_number,omitempty"`
+	Duration      string             `json:"duration_ns,omitempty"`
+	Queued        string             `json:"queued_ns,omitempty"`
+	Syn           string             `json:"syn_ns,omitempty"`
+	Bytes         int64              `json:"bytes,omitempty"`
+	Flags         uint32             `json:"flags,omitempty"`
+	QueueSource   int                `json:"queue_source,omitempty"`
+	Operation     string             `json:"operation,omitempty"`
+	Errno         int                `json:"errno,omitempty"`
+	CPU           *int               `json:"cpu,omitempty"`
+	Socket        *SocketObservation `json:"socket,omitempty"`
+	FromState     uint8              `json:"from_state,omitempty"`
+	ToState       uint8              `json:"to_state,omitempty"`
+}
+
+// Socket snapshots describe one shared TCP connection, never a request's memory.
+type SocketObservation struct {
+	Point            string `json:"point"`
+	State            uint8  `json:"state"`
+	ReceiveMemory    uint64 `json:"receive_memory_bytes"`
+	SendQueuedMemory uint64 `json:"send_queued_memory_bytes"`
+	UnreadSequence   uint32 `json:"unread_sequence_units"`
+	SmoothedRTT      uint32 `json:"srtt_us"`
+	CongestionWindow uint32 `json:"cwnd_segments"`
+	PacketsOut       uint32 `json:"packets_out"`
+	Retransmits      uint32 `json:"total_retransmits"`
+	SendWindow       uint32 `json:"send_window_bytes"`
+	ReceiveWindow    uint32 `json:"receive_window_bytes"`
 }
 
 func decimalNS(s string, optional bool) bool {
@@ -71,8 +92,48 @@ func ValidateTransport(raw []byte) (TransportRecord, error) {
 			return t, fmt.Errorf("invalid session")
 		}
 	}
-	if !contains([]string{"accept", "register", "ready", "read", "close", "request_begin", "request_end"}, t.Event) {
+	if !contains([]string{"accept", "register", "ready", "read", "read_error", "write", "write_error", "socket", "network_rx", "tcp_state", "tcp_retransmit", "close", "request_begin", "request_end"}, t.Event) {
 		return t, fmt.Errorf("unknown transport event")
+	}
+	if t.FromState > 32 || t.ToState > 32 || t.Event != "tcp_state" && (t.FromState != 0 || t.ToState != 0) {
+		return t, fmt.Errorf("invalid TCP transition")
+	}
+	if t.Errno < 0 || t.Errno > 4095 || t.CPU != nil && (*t.CPU < 0 || *t.CPU > 65535) {
+		return t, fmt.Errorf("invalid syscall/cpu metadata")
+	}
+	if t.Operation != "" && !contains([]string{"read", "recvfrom", "recvmsg", "write", "writev", "sendto", "sendmsg", "sendfile"}, t.Operation) {
+		return t, fmt.Errorf("unknown syscall operation")
+	}
+	if t.CPU != nil && t.Event != "network_rx" {
+		return t, fmt.Errorf("CPU attribution outside receive callback")
+	}
+	if t.Operation != "" {
+		reading := t.Event == "read" || t.Event == "read_error"
+		writing := t.Event == "write" || t.Event == "write_error"
+		if !reading && !writing || reading && !contains([]string{"read", "recvfrom", "recvmsg"}, t.Operation) || writing && !contains([]string{"write", "writev", "sendto", "sendmsg", "sendfile"}, t.Operation) {
+			return t, fmt.Errorf("operation/event mismatch")
+		}
+	}
+	if (t.Event == "write" || t.Event == "write_error" || t.Event == "read_error") && t.Operation == "" {
+		return t, fmt.Errorf("missing syscall operation")
+	}
+	failed := t.Event == "read_error" || t.Event == "write_error"
+	if failed != (t.Errno > 0) || failed && t.Bytes != 0 {
+		return t, fmt.Errorf("invalid error result")
+	}
+	if (failed || t.Event == "write" || t.Event == "network_rx") && t.Duration == "" {
+		return t, fmt.Errorf("missing elapsed boundary")
+	}
+	if t.Event == "network_rx" && t.CPU == nil {
+		return t, fmt.Errorf("missing receive CPU")
+	}
+	if t.Event == "socket" && t.Socket == nil {
+		return t, fmt.Errorf("missing socket state")
+	}
+	if v := t.Socket; v != nil {
+		if t.Event != "socket" || v.State > 32 || v.ReceiveMemory > 1<<40 || v.SendQueuedMemory > 1<<40 || !contains([]string{"recvmsg_return", "sendmsg_return"}, v.Point) {
+			return t, fmt.Errorf("invalid socket snapshot")
+		}
 	}
 	marker := t.Event == "request_begin" || t.Event == "request_end"
 	if marker {

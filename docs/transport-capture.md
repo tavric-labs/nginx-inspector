@@ -134,3 +134,44 @@ Plain `start` retains the existing HTTP-only mode. It does not silently acquire
 host privileges. Replay defaults to **Transport recorded**, which finds up to 100
 retained journeys even after newer HTTP-only requests push them off the recent
 request list. Choose **All recent HTTP requests** to inspect HTTP-only history.
+
+## Kernel and socket evidence in replay
+
+The TCP probes add connection evidence to the full journey. They never inspect
+payload buffers, packet contents, IP addresses or TLS plaintext. Kernel socket
+pointers are used only as private map keys and are not emitted.
+
+| Observation | What it helps explain | Scope and limit |
+| --- | --- | --- |
+| `tcp_rcv_established` entry/return | When the established TCP receive handler ran, elapsed time and CPU number | Shared socket; elapsed time includes nested work and is not exclusive CPU time |
+| `tcp_recvmsg` / `tcp_sendmsg` return | Socket accounting after kernel receive/send operations | Point-in-time samples, not allocated memory owned by one HTTP request |
+| Read errors, including `EAGAIN` | Why a worker can stop reading and wait for readiness | Nonblocking result; not an HTTP failure classification |
+| `write`, `writev`, `sendto`, `sendmsg`, `sendfile` returns | Bytes accepted by the kernel, syscall elapsed time and backpressure | Connection bytes, potentially encrypted; accepted does not mean delivered |
+| TCP state transition hook | Establishment/shutdown state changes while the identified socket is tracked | A socket's history can continue after its original FD is closed |
+| TCP retransmission hook | A retransmission tracepoint ran for the selected socket | Does not attribute delay or packet loss to a particular request |
+
+Socket snapshots include receive-memory accounting, queued send memory, unread
+TCP sequence distance, smoothed RTT, congestion window in segments, outstanding
+segments, lifetime retransmission counter and TCP send/receive window fields.
+Memory accounting includes overhead. Sequence distance is not memory allocation
+and can include a FIN sequence unit. A zero RTT field can mean no estimate or
+rounding, rather than a zero-latency network.
+
+The receive callback can execute in softirq or other task context. Its record's
+worker PID identifies the original socket owner, while its CPU field identifies
+where the callback returned. Those are different facts. FD generation and trace
+session still separate reused descriptors; the socket mapping is removed at
+kernel free. Callback nesting and maps are bounded. Missing probes, late attach,
+map/output limits, truncation and retention can still leave partial history.
+
+Kernel receive-stack CPU attribution and per-byte buffer residence remain outside
+these measurements. Replay shows callback elapsed time and socket state as useful
+additional observations, without replacing those unknowns.
+
+References: [nginx event/development guide](https://nginx.org/en/docs/dev/development_guide.html),
+[Linux receive semantics](https://www.man7.org/linux/man-pages/man2/recvmsg.2.html),
+[Linux send semantics](https://www.man7.org/linux/man-pages/man2/sendto.2.html),
+[Linux TCP fields](https://github.com/torvalds/linux/blob/v6.8/include/linux/tcp.h),
+[socket accounting](https://github.com/torvalds/linux/blob/v6.8/include/net/sock.h),
+[TCP tracepoints](https://github.com/torvalds/linux/blob/v6.8/include/trace/events/tcp.h)
+and [socket-state tracepoint](https://github.com/torvalds/linux/blob/v6.8/include/trace/events/sock.h).
