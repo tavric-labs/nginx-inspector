@@ -305,7 +305,7 @@ tracepoint:syscalls:sys_exit_epoll_ctl /%s && @ctl[tid]/ {if(args->ret==0){$fd=@
 	// syscall. Excess returned events remain outside this bounded observation.
 	for _, name := range []string{"epoll_wait", "epoll_pwait"} {
 		fmt.Fprintf(&b, `tracepoint:syscalls:sys_enter_%s /%s/ {@ep_ptr[tid]=(uint64)args->events;@ep_fd[tid]=(int64)args->epfd;}
-tracepoint:syscalls:sys_exit_%s /%s/ {$i=0;unroll(32){if($i<args->ret){$ptr=@ep_ptr[tid]+(uint64)12*(uint64)$i;$data=*(uint64*)uptr($ptr+4);$f=@datafd[pid,@ep_fd[tid],$data];if($f){$fd=$f-1;if(@gen[pid,$fd] && @datagen[pid,@ep_fd[tid],$data]==@gen[pid,$fd]){%s}}}$i=$i+1;}delete(@ep_ptr[tid]);delete(@ep_fd[tid]);}
+tracepoint:syscalls:sys_exit_%s /%s/ {$i=0;unroll(32){if($i<args->ret){$ptr=@ep_ptr[tid]+12*$i;$data=*(uint64*)uptr($ptr+4);$f=@datafd[pid,@ep_fd[tid],$data];if($f){$fd=$f-1;if(@gen[pid,$fd] && @datagen[pid,@ep_fd[tid],$data]==@gen[pid,$fd]){%s}}}$i=$i+1;}delete(@ep_ptr[tid]);delete(@ep_fd[tid]);}
 `, name, scope, name, scope, emit("ready", `,\"flags\":%u`, `,*(uint32*)uptr($ptr)`))
 	}
 	for _, name := range []string{"read", "readv", "recvfrom", "recvmsg"} {
