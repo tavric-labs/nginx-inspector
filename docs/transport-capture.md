@@ -82,8 +82,9 @@ UDP failures; BPF output/map loss can impose additional limits. UDP is best effo
 
 Transport records share configured history hours, with a separate cap of 32 times
 the HTTP event limit, up to 320,000 records. `/api/transport/<request-id>` returns
-the explicit marker correlation plus up to the first 256 retained connection
-records. Truncation is shown; the selected marker remains available separately.
+the explicit marker correlation plus up to 256 retained connection records: setup and a bounded tail near the
+selected request marker. This selection uses delivery order; it does not assign
+all nearby socket work to the request. Truncation is shown; the selected marker remains available separately.
 Ambiguous session/generation matches return no guessed history. Late attachment,
 retention or collector restarts may remove evidence; unknown never means zero.
 

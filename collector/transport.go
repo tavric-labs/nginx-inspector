@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"sort"
 	"strconv"
 	"time"
 )
@@ -202,6 +203,7 @@ func (s *Store) initTransport() error {
 		"CREATE INDEX IF NOT EXISTS transport_request ON transport_records(request_id)",
 		"CREATE INDEX IF NOT EXISTS transport_connection ON transport_records(session,host_pid,fd,generation)",
 		"CREATE INDEX IF NOT EXISTS transport_created ON transport_records(created_ms)",
+		"CREATE INDEX IF NOT EXISTS transport_markers ON transport_records(session,host_pid,fd,generation,request_id) WHERE event='request_begin'",
 	} {
 		if _, e := s.db.Exec(q); e != nil {
 			return e
@@ -286,7 +288,8 @@ func (s *Store) Transport(id string) (TransportView, error) {
 	}
 	v.Begin = &m
 	var endRaw string
-	err := s.db.QueryRow("SELECT record FROM transport_records WHERE request_id=? AND event='request_end' AND session=? AND host_pid=? AND fd=? AND generation=? ORDER BY seq LIMIT 1", id, m.Session, m.HostPID, m.FD, m.Generation).Scan(&endRaw)
+	var endSeq int64
+	err := s.db.QueryRow("SELECT record,seq FROM transport_records WHERE request_id=? AND event='request_end' AND session=? AND host_pid=? AND fd=? AND generation=? ORDER BY seq LIMIT 1", id, m.Session, m.HostPID, m.FD, m.Generation).Scan(&endRaw, &endSeq)
 	if err != nil && err != sql.ErrNoRows {
 		return v, err
 	}
@@ -297,36 +300,75 @@ func (s *Store) Transport(id string) (TransportView, error) {
 		}
 		v.End = &end
 	}
-	// Return connection history, explicitly shared across requests/streams. Do not
-	// call all socket activity within an HTTP lifetime that request's own work.
-	rows, e = s.db.Query("SELECT record FROM transport_records WHERE session=? AND host_pid=? AND fd=? AND generation=? ORDER BY seq LIMIT 257", m.Session, m.HostPID, m.FD, m.Generation)
-	if e != nil {
+	// Keep setup plus a bounded tail near the selected request's end marker.
+	// Selection uses delivery order, not a guessed packet/request association.
+	// Timestamps retain their actual values and all socket records remain shared.
+	key := []any{m.Session, m.HostPID, m.FD, m.Generation}
+	var total int
+	if e = s.db.QueryRow("SELECT COUNT(*) FROM transport_records WHERE session=? AND host_pid=? AND fd=? AND generation=?", key...).Scan(&total); e != nil {
 		return v, e
 	}
-	defer rows.Close()
-	for rows.Next() {
-		var raw string
-		if e = rows.Scan(&raw); e != nil {
-			return v, e
+	bySeq := map[int64]TransportRecord{}
+	load := func(query string, args ...any) error {
+		rows, e := s.db.Query(query, args...)
+		if e != nil {
+			return e
 		}
-		var t TransportRecord
-		if e = json.Unmarshal([]byte(raw), &t); e != nil {
-			return v, e
+		defer rows.Close()
+		for rows.Next() {
+			var raw string
+			var seq int64
+			if e = rows.Scan(&raw, &seq); e != nil {
+				return e
+			}
+			var record TransportRecord
+			if e = json.Unmarshal([]byte(raw), &record); e != nil {
+				return e
+			}
+			bySeq[seq] = record
 		}
-		if len(v.Records) == 256 {
-			v.Truncated = true
-			break
-		}
-		v.Records = append(v.Records, t)
-		if t.RequestID != "" && t.RequestID != id {
+		return rows.Err()
+	}
+	if e = load("SELECT record,seq FROM transport_records WHERE session=? AND host_pid=? AND fd=? AND generation=? ORDER BY seq LIMIT 32", key...); e != nil {
+		return v, e
+	}
+	query := "SELECT record,seq FROM transport_records WHERE session=? AND host_pid=? AND fd=? AND generation=?"
+	args := append([]any{}, key...)
+	if v.End != nil {
+		query += " AND seq<=?"
+		args = append(args, endSeq+64)
+	}
+	query += " ORDER BY seq DESC LIMIT 224"
+	if e = load(query, args...); e != nil {
+		return v, e
+	}
+	seqs := make([]int64, 0, len(bySeq))
+	for seq := range bySeq {
+		seqs = append(seqs, seq)
+	}
+	sort.Slice(seqs, func(i, j int) bool { return seqs[i] < seqs[j] })
+	for _, seq := range seqs {
+		record := bySeq[seq]
+		v.Records = append(v.Records, record)
+		if record.RequestID != "" && record.RequestID != id {
 			v.Shared = true
 		}
 	}
+	v.Truncated = total > len(v.Records)
+	if !v.Shared {
+		var shared int
+		args := append(append([]any{}, key...), id)
+		if e = s.db.QueryRow("SELECT EXISTS(SELECT 1 FROM transport_records WHERE session=? AND host_pid=? AND fd=? AND generation=? AND event='request_begin' AND request_id<>?)", args...).Scan(&shared); e != nil {
+			return v, e
+		}
+		v.Shared = shared != 0
+	}
+
 	v.Status = "correlated_connection"
 	if m.RequestNumber > 1 {
 		v.Shared = true
 	}
-	return v, rows.Err()
+	return v, nil
 }
 func (s *Server) persistTransport() {
 	for first := range s.transportPending {

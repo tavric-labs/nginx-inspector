@@ -241,3 +241,43 @@ func TestReceiveCPUAndResidenceBounds(t *testing.T) {
 		}
 	}
 }
+
+func TestTransportKeepsEvidenceNearSelectedRequest(t *testing.T) {
+	s, e := NewStore(filepath.Join(t.TempDir(), "trace.db"), 4, 1000)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer s.Close()
+	batch := []TransportRecord{traceFixture("accept", "", "100", "100")}
+	for i := 0; i < 500; i++ {
+		batch = append(batch, traceFixture("read", "", "100", fmt.Sprint(200+i)))
+	}
+	begin := traceFixture("request_begin", "11-5-7-1000", "100", "1000")
+	begin.RequestNumber = 5
+	batch = append(batch, begin)
+	snapshot := traceFixture("socket", "", "100", "1001")
+	snapshot.Socket = &SocketObservation{Point: "recvmsg_return", State: 1, ReceiveMemory: 1234}
+	batch = append(batch, snapshot)
+	end := begin
+	end.Event = "request_end"
+	end.At = "1010"
+	batch = append(batch, end)
+	for i := 0; i < 500; i++ {
+		batch = append(batch, traceFixture("read", "", "100", fmt.Sprint(1100+i)))
+	}
+	if e = s.insertTransport(batch); e != nil {
+		t.Fatal(e)
+	}
+	v, e := s.Transport(begin.RequestID)
+	if e != nil || !v.Truncated || len(v.Records) > 256 || v.Begin == nil || v.End == nil {
+		t.Fatal(v, e)
+	}
+	setup, near := false, false
+	for _, r := range v.Records {
+		setup = setup || r.Event == "accept"
+		near = near || r.Socket != nil && r.Socket.ReceiveMemory == 1234
+	}
+	if !setup || !near {
+		t.Fatal("lost setup or selected-request socket evidence", setup, near)
+	}
+}
