@@ -42,6 +42,7 @@ func RunCaptureTrace(ctx context.Context, base string, options TraceOptions, sam
 	if err := verifyMarkerABI(options.Module); err != nil {
 		return err
 	}
+	options.streamOnly = out == io.Discard
 	return runCaptureTrace(ctx, base, options, sample, out, diagnostics, RunTrace)
 }
 func runCaptureTrace(ctx context.Context, base string, options TraceOptions, sample int, out, diagnostics io.Writer, trace func(context.Context, TraceOptions, io.Writer, io.Writer) error) error {

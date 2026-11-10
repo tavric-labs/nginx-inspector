@@ -68,7 +68,9 @@ pointers, memory dumps or payloads are emitted. Dependencies are bpftrace and ss
 and readable kernel BTF; the tracer never installs packages.
 
 Stop with SIGINT/SIGTERM. Sessions allow whole-second durations from 1 to 7,200
-seconds and stop at 64 MiB of emitted records. Map capacity is 4,096 keys per map;
+seconds. Standalone `trace` archives stop at 64 MiB of emitted records. A unified
+`start --transport` streams into the bounded collector without writing an NDJSON
+archive, so aggregate event volume does not shorten its requested window. Map capacity is 4,096 keys per map;
 at most 32 returned descriptors are examined in an epoll call. These bounds and
 kernel/output drops can leave gaps. Probe overhead is real and workload dependent;
 no guarantee of unchanged latency is implied.
@@ -123,8 +125,9 @@ This command stays running. It starts HTTP sampling, arms BPF and reports
 `TRACE_READY`. Both stop at the requested deadline, on SIGINT/SIGTERM, or when
 `nginx-inspector stop` turns capture off. A probe or collector failure stops both
 instead of silently leaving HTTP-only capture. It never reloads nginx. The
-64 MiB trace-output bound and target-generation checks still apply and can end
-the session early. Transport starts allow whole-second durations up to two hours.
+target-generation, collector-health and map/output checks still apply. Live
+capture writes no unbounded NDJSON archive; collector retention remains rolling
+and bounded. Transport starts allow whole-second durations up to two hours.
 
 `nginx-inspector status` reports HTTP and transport states. Transport status uses
 a 15-second lease, renewed by the live helper; a dead helper cannot leave the UI

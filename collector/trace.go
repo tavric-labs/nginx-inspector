@@ -20,11 +20,12 @@ import (
 )
 
 type TraceOptions struct {
-	MasterPID int
-	Module    string
-	Duration  time.Duration
-	Deadline  time.Time
-	UDPPort   int
+	MasterPID  int
+	Module     string
+	Duration   time.Duration
+	Deadline   time.Time
+	UDPPort    int
+	streamOnly bool
 }
 
 var modulePathPattern = regexp.MustCompile(`^/[a-zA-Z0-9_./-]+$`)
@@ -201,7 +202,7 @@ func RunTrace(ctx context.Context, o TraceOptions, out, diagnostics io.Writer) e
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 4096), 4096)
 	received, sent, invalid, dropped := 0, 0, 0, 0
-	remaining := 64 << 20
+	output := traceOutput{writer: out, remaining: 64 << 20, streamOnly: o.streamOnly}
 	var outputErr error
 	for scanner.Scan() {
 		line := scanner.Bytes()
@@ -222,13 +223,7 @@ func RunTrace(ctx context.Context, o TraceOptions, out, diagnostics io.Writer) e
 			continue
 		}
 		received++
-		if len(line)+1 > remaining {
-			outputErr = fmt.Errorf("64 MiB trace output limit reached")
-			cancel()
-			break
-		}
-		remaining -= len(line) + 1
-		if _, e = out.Write(append(append([]byte{}, line...), '\n')); e != nil {
+		if e := output.record(line); e != nil {
 			outputErr = e
 			cancel()
 			break
